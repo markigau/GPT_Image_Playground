@@ -1992,7 +1992,7 @@ export async function exportData() {
     }
 
     const manifest: ExportData = {
-      version: 4,
+      version: 5,
       exportedAt: new Date(exportedAt).toISOString(),
       settings: appStateSnapshot.settings as AppSettings,
       providers: appStateSnapshot.providers as ProviderConfig[] | undefined,
