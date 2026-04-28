@@ -5,6 +5,7 @@ import {
   ensureImageCached,
   reuseConfig,
   editOutputs,
+  retryTask,
   toggleTaskFavorite,
   removeTask,
   restoreTask,
@@ -193,6 +194,10 @@ export default function DetailModal() {
   const handleEdit = () => {
     editOutputs(task, currentOutputImageId || task.outputImages?.[0])
     setDetailTaskId(null)
+  }
+
+  const handleRetry = () => {
+    void retryTask(task)
   }
 
   const handleToggleFavorite = () => {
@@ -623,14 +628,22 @@ export default function DetailModal() {
                   复用配置
                 </button>
                 <button
-                  onClick={handleEdit}
-                  disabled={!outputLen}
-                  className="flex-1 flex items-center justify-center gap-1.5 px-2 sm:px-3 py-2 rounded-lg bg-green-50 dark:bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition text-xs sm:text-sm font-medium whitespace-nowrap"
+                  onClick={task.status === 'error' ? handleRetry : handleEdit}
+                  disabled={task.status !== 'error' && !outputLen}
+                  className={`flex-1 flex items-center justify-center gap-1.5 px-2 sm:px-3 py-2 rounded-lg transition text-xs sm:text-sm font-medium whitespace-nowrap ${
+                    task.status === 'error'
+                      ? 'bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:hover:bg-amber-500/20'
+                      : 'bg-green-50 text-green-600 hover:bg-green-100 dark:bg-green-500/10 dark:text-green-400 dark:hover:bg-green-500/20 disabled:opacity-40 disabled:cursor-not-allowed'
+                  }`}
                 >
                   <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    {task.status === 'error' ? (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m14.216 2A7.5 7.5 0 005.582 9m0 0H10m10 11v-5h-.581m0 0H14a7.5 7.5 0 01-13.418-2" />
+                    ) : (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    )}
                   </svg>
-                  编辑输出
+                  {task.status === 'error' ? '重试' : '编辑输出'}
                 </button>
                 <button
                   onClick={handleDelete}

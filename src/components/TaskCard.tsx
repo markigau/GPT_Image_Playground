@@ -16,6 +16,7 @@ interface Props {
   selected: boolean
   onReuse: () => void
   onEditOutputs: () => void
+  onRetry: () => void
   onToggleFavorite: () => void
   onMoveCategory: () => void
   onDelete: () => void
@@ -36,6 +37,7 @@ function TaskCard({
   selected,
   onReuse,
   onEditOutputs,
+  onRetry,
   onToggleFavorite,
   onMoveCategory,
   onDelete,
@@ -394,10 +396,14 @@ function TaskCard({
                     </svg>
                   </button>
                   <button
-                    onClick={onEditOutputs}
-                    className="p-1.5 rounded-md hover:bg-green-50 dark:hover:bg-green-950/30 text-gray-400 hover:text-green-500 transition disabled:opacity-30"
-                    title="编辑输出"
-                    disabled={!task.outputImages?.length}
+                    onClick={task.status === 'error' ? onRetry : onEditOutputs}
+                    className={`p-1.5 rounded-md transition ${
+                      task.status === 'error'
+                        ? 'text-gray-400 hover:bg-amber-50 hover:text-amber-500 dark:hover:bg-amber-950/30'
+                        : 'text-gray-400 hover:bg-green-50 hover:text-green-500 dark:hover:bg-green-950/30 disabled:opacity-30'
+                    }`}
+                    title={task.status === 'error' ? '重试' : '编辑输出'}
+                    disabled={task.status !== 'error' && !task.outputImages?.length}
                   >
                     <svg
                       className="w-4 h-4"
@@ -405,12 +411,21 @@ function TaskCard({
                       stroke="currentColor"
                       viewBox="0 0 24 24"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                      />
+                      {task.status === 'error' ? (
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M4 4v5h.582m14.216 2A7.5 7.5 0 005.582 9m0 0H10m10 11v-5h-.581m0 0H14a7.5 7.5 0 01-13.418-2"
+                        />
+                      ) : (
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                        />
+                      )}
                     </svg>
                   </button>
                   <button

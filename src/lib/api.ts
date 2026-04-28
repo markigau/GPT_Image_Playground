@@ -1,7 +1,6 @@
 import type {
   ApiProtocol,
   AppSettings,
-  ImageApiResponse,
   ResponsesImageInputMode,
   ResponsesPromptRevisionMode,
   ResponsesTransportMode,
@@ -372,7 +371,7 @@ function summarizeDebugString(value: string): string {
   return value
 }
 
-function sanitizeDebugValue(value: unknown, depth = 0): unknown {
+function sanitizeDebugValue(value: unknown, depth = 0, visited?: WeakSet<object>): unknown {
   if (value == null || typeof value === 'boolean' || typeof value === 'number') {
     return value
   }
@@ -385,10 +384,18 @@ function sanitizeDebugValue(value: unknown, depth = 0): unknown {
     return '[max-depth-reached]'
   }
 
+  const nextVisited = visited ?? new WeakSet<object>()
+  if (typeof value === 'object' && value !== null) {
+    if (nextVisited.has(value)) {
+      return '[circular]'
+    }
+    nextVisited.add(value)
+  }
+
   if (Array.isArray(value)) {
     const items = value
       .slice(0, DEBUG_ARRAY_ITEM_LIMIT)
-      .map((item) => sanitizeDebugValue(item, depth + 1))
+      .map((item) => sanitizeDebugValue(item, depth + 1, nextVisited))
 
     if (value.length > DEBUG_ARRAY_ITEM_LIMIT) {
       items.push(`[+${value.length - DEBUG_ARRAY_ITEM_LIMIT} more items]`)
@@ -402,7 +409,7 @@ function sanitizeDebugValue(value: unknown, depth = 0): unknown {
     const nextValue = Object.fromEntries(
       entries
         .slice(0, DEBUG_OBJECT_KEY_LIMIT)
-        .map(([key, nestedValue]) => [key, sanitizeDebugValue(nestedValue, depth + 1)] as const),
+        .map(([key, nestedValue]) => [key, sanitizeDebugValue(nestedValue, depth + 1, nextVisited)] as const),
     )
 
     if (entries.length > DEBUG_OBJECT_KEY_LIMIT) {
@@ -413,6 +420,55 @@ function sanitizeDebugValue(value: unknown, depth = 0): unknown {
   }
 
   return String(value)
+}
+
+function buildCompactResponsesPayload(
+  response: Record<string, unknown>,
+  outputOverride?: unknown[],
+): Record<string, unknown> {
+  const compact: Record<string, unknown> = {}
+
+  if (typeof response.id === 'string' && response.id) {
+    compact.id = response.id
+  }
+  if (typeof response.object === 'string' && response.object) {
+    compact.object = response.object
+  }
+  if (typeof response.created_at === 'number' && Number.isFinite(response.created_at)) {
+    compact.created_at = response.created_at
+  }
+  if (typeof response.status === 'string' && response.status) {
+    compact.status = response.status
+  }
+  if (typeof response.model === 'string' && response.model) {
+    compact.model = response.model
+  }
+  if (isRecord(response.error)) {
+    compact.error = response.error
+  }
+
+  const output = outputOverride ?? (Array.isArray(response.output) ? response.output : [])
+  if (output.length > 0) {
+    compact.output = output
+  }
+
+  return Object.keys(compact).length > 0 ? compact : { output }
+}
+
+function compactResponsesPayloadIfNeeded(payload: unknown): unknown {
+  if (!isRecord(payload)) {
+    return payload
+  }
+
+  if (payload.type === 'response.completed' && isRecord(payload.response)) {
+    return buildCompactResponsesPayload(payload.response)
+  }
+
+  if (Array.isArray(payload.output)) {
+    return buildCompactResponsesPayload(payload)
+  }
+
+  return payload
 }
 
 function summarizeRequestHeadersForDebug(headers: Record<string, string>): Record<string, unknown> {
@@ -717,6 +773,10 @@ async function appendImageFromItem(
 ) {
   if (!isRecord(item)) return
 
+  if (item.type === 'image_generation.partial_image') {
+    return
+  }
+
   const b64 = item.b64_json
   if (typeof b64 === 'string' && b64) {
     images.push(normalizeBase64Image(b64, fallbackMime))
@@ -729,20 +789,66 @@ async function appendImageFromItem(
     return
   }
 
-  if (isHttpUrl(item.url)) {
-    images.push(await fetchImageUrlAsDataUrl(item.url, fallbackMime, signal))
-    return
+  if (typeof item.url === 'string' && item.url) {
+    if (isDataUrl(item.url)) {
+      images.push(item.url)
+      return
+    }
+    if (isHttpUrl(item.url)) {
+      images.push(await fetchImageUrlAsDataUrl(item.url, fallbackMime, signal))
+      return
+    }
   }
 
-  if (isHttpUrl(item.image_url)) {
-    images.push(await fetchImageUrlAsDataUrl(item.image_url, fallbackMime, signal))
-    return
+  if (typeof item.image_url === 'string' && item.image_url) {
+    if (isDataUrl(item.image_url)) {
+      images.push(item.image_url)
+      return
+    }
+    if (isHttpUrl(item.image_url)) {
+      images.push(await fetchImageUrlAsDataUrl(item.image_url, fallbackMime, signal))
+      return
+    }
   }
+}
 
-  const content = item.content
-  if (Array.isArray(content)) {
-    for (const contentItem of content) {
-      await appendImageFromItem(images, contentItem, fallbackMime, signal)
+function forEachPayloadRecord(
+  payload: unknown,
+  visitor: (item: Record<string, unknown>) => void,
+) {
+  const queue: unknown[] = [payload]
+  const visited = new WeakSet<object>()
+
+  for (let index = 0; index < queue.length; index++) {
+    const current = queue[index]
+    if (!isRecord(current) || visited.has(current)) {
+      continue
+    }
+
+    visited.add(current)
+    visitor(current)
+
+    const data = current.data
+    if (Array.isArray(data)) {
+      queue.push(...data)
+    }
+
+    const output = current.output
+    if (Array.isArray(output)) {
+      queue.push(...output)
+    }
+
+    const content = current.content
+    if (Array.isArray(content)) {
+      queue.push(...content)
+    }
+
+    if (current.item !== undefined) {
+      queue.push(current.item)
+    }
+
+    if (current.response !== undefined) {
+      queue.push(current.response)
     }
   }
 }
@@ -806,13 +912,6 @@ function appendImageGenerationCallsFromItem(
   if (call) {
     calls.push(call)
   }
-
-  const content = item.content
-  if (Array.isArray(content)) {
-    for (const contentItem of content) {
-      appendImageGenerationCallsFromItem(calls, contentItem)
-    }
-  }
 }
 
 function dedupeImageGenerationCalls(
@@ -833,31 +932,9 @@ function dedupeImageGenerationCalls(
 
 function collectImageGenerationCallsFromPayload(payload: unknown): ResponseImageGenerationCallMeta[] {
   const calls: ResponseImageGenerationCallMeta[] = []
-  if (!isRecord(payload)) return calls
-
-  const data = payload.data
-  if (Array.isArray(data)) {
-    for (const item of data) {
-      appendImageGenerationCallsFromItem(calls, item)
-    }
-  }
-
-  const output = payload.output
-  if (Array.isArray(output)) {
-    for (const item of output) {
-      appendImageGenerationCallsFromItem(calls, item)
-    }
-  }
-
-  const item = payload.item
-  if (isRecord(item)) {
+  forEachPayloadRecord(payload, (item) => {
     appendImageGenerationCallsFromItem(calls, item)
-  }
-
-  const response = payload.response
-  if (isRecord(response)) {
-    calls.push(...collectImageGenerationCallsFromPayload(response))
-  }
+  })
 
   return dedupeImageGenerationCalls(calls)
 }
@@ -923,31 +1000,14 @@ async function parseImagesFromPayload(
   signal: AbortSignal,
 ): Promise<string[]> {
   const images: string[] = []
-  if (!isRecord(payload)) return images
+  const items: Record<string, unknown>[] = []
 
-  const data = payload.data
-  if (Array.isArray(data)) {
-    for (const item of data) {
-      await appendImageFromItem(images, item, fallbackMime, signal)
-    }
-  }
+  forEachPayloadRecord(payload, (item) => {
+    items.push(item)
+  })
 
-  const output = payload.output
-  if (Array.isArray(output)) {
-    for (const item of output) {
-      await appendImageFromItem(images, item, fallbackMime, signal)
-    }
-  }
-
-  const item = payload.item
-  if (isRecord(item)) {
+  for (const item of items) {
     await appendImageFromItem(images, item, fallbackMime, signal)
-  }
-
-  const response = payload.response
-  if (isRecord(response)) {
-    const nestedImages = await parseImagesFromPayload(response, fallbackMime, signal)
-    images.push(...nestedImages)
   }
 
   return images
@@ -991,6 +1051,11 @@ interface ResponsesRequestPlan {
   transport: ResponsesTransportKind
   actionMode: ResponsesActionMode
   toolChoiceMode: ResponsesToolChoiceMode
+}
+
+interface ImagesRequestPlan {
+  id: string
+  transport: ResponsesTransportKind
 }
 
 function getApiProtocol(settings: AppSettings): ApiProtocol {
@@ -1080,6 +1145,26 @@ function shouldFallbackResponsesStreamToJson(
   return !/(?:auth_not_found|no auth available|invalid api key|insufficient|quota)/i.test(error.message)
 }
 
+function shouldFallbackImagesStreamToJson(
+  error: unknown,
+  currentPlan: ImagesRequestPlan,
+  nextPlan?: ImagesRequestPlan,
+): boolean {
+  if (currentPlan.transport !== 'stream' || nextPlan?.transport !== 'json') {
+    return false
+  }
+  if (!(error instanceof Error)) {
+    return false
+  }
+
+  const status = (error as ApiError).status
+  if (status != null && [401, 403, 429, 524].includes(status)) {
+    return false
+  }
+
+  return !/(?:auth_not_found|no auth available|invalid api key|insufficient|quota)/i.test(error.message)
+}
+
 function isPayloadTooLargeError(error: unknown): boolean {
   if (!(error instanceof Error)) return false
 
@@ -1117,10 +1202,11 @@ async function readResponsesPayload(
   const requestId = attachDebugResponseMeta(logEntry, response)
   const directJson = tryParseJson(text)
   if (directJson !== undefined) {
+    const normalizedPayload = compactResponsesPayloadIfNeeded(directJson)
     if (logEntry) {
-      logEntry.responseBody = sanitizeDebugValue(directJson)
+      logEntry.responseBody = sanitizeDebugValue(normalizedPayload)
     }
-    return directJson
+    return normalizedPayload
   }
 
   const sseEvents = parseSseEvents(text)
@@ -1170,14 +1256,12 @@ async function readResponsesPayload(
   if (completedPayload && isRecord(completedPayload.response)) {
     const completedResponse = completedPayload.response as Record<string, unknown>
     const existingOutput = Array.isArray(completedResponse.output) ? completedResponse.output : []
-    if (existingOutput.length > 0 || outputItems.length === 0) {
-      return completedResponse
+    const normalizedOutput = outputItems.length > 0 ? outputItems : existingOutput
+    const compactResponse = buildCompactResponsesPayload(completedResponse, normalizedOutput)
+    if (logEntry) {
+      logEntry.responseBody = sanitizeDebugValue(compactResponse)
     }
-
-    return {
-      ...completedResponse,
-      output: outputItems,
-    }
+    return compactResponse
   }
 
   if (outputItems.length > 0) {
@@ -1203,111 +1287,256 @@ async function readResponsesPayload(
   })
 }
 
+function isImagesFailurePayload(payload: Record<string, unknown>): boolean {
+  const type = readOptionalText(payload.type)
+  if (type && /(?:^error$|failed$)/i.test(type)) {
+    return true
+  }
+
+  return isRecord(payload.error)
+}
+
+function hasDirectImagePayload(payload: Record<string, unknown>): boolean {
+  if (typeof payload.b64_json === 'string' && payload.b64_json) {
+    return true
+  }
+  if (typeof payload.result === 'string' && payload.result) {
+    return true
+  }
+  if (typeof payload.url === 'string' && payload.url && (isDataUrl(payload.url) || isHttpUrl(payload.url))) {
+    return true
+  }
+  if (
+    typeof payload.image_url === 'string' &&
+    payload.image_url &&
+    (isDataUrl(payload.image_url) || isHttpUrl(payload.image_url))
+  ) {
+    return true
+  }
+
+  return false
+}
+
+async function readImagesPayload(
+  response: Response,
+  logEntry?: ApiDebugRequestLogEntry,
+): Promise<unknown> {
+  const text = await response.text()
+  const requestId = attachDebugResponseMeta(logEntry, response)
+  const directJson = tryParseJson(text)
+  if (directJson !== undefined) {
+    if (logEntry) {
+      logEntry.responseBody = sanitizeDebugValue(directJson)
+    }
+    return directJson
+  }
+
+  const sseEvents = parseSseEvents(text)
+  if (!sseEvents.length) {
+    if (logEntry && text.trim()) {
+      logEntry.responseText = summarizeDebugString(text)
+    }
+    throw createApiError('Images API 返回了非 JSON 响应，且不是可解析的 SSE 数据', response.status, {
+      requestId,
+      details: text.trim() ? { responseText: text } : undefined,
+    })
+  }
+
+  const jsonPayloads = sseEvents
+    .map((event) => event.json)
+    .filter((payload): payload is Record<string, unknown> => isRecord(payload))
+
+  const failedPayload = [...jsonPayloads].reverse().find((payload) => isImagesFailurePayload(payload))
+  if (failedPayload) {
+    const message = extractErrorMessage(failedPayload) || 'Images API 处理失败'
+    if (logEntry) {
+      logEntry.responseBody = sanitizeDebugValue(failedPayload)
+    }
+    throw createApiError(message, response.status, {
+      requestId,
+      details: {
+        responseBody: failedPayload,
+      },
+    })
+  }
+
+  const completedItems = jsonPayloads.filter((payload) => payload.type === 'image_generation.completed')
+  if (completedItems.length > 0) {
+    const completedPayload = { data: completedItems }
+    if (logEntry) {
+      logEntry.responseBody = sanitizeDebugValue(completedPayload)
+    }
+    return completedPayload
+  }
+
+  const standaloneImages = jsonPayloads.filter(
+    (payload) => payload.type == null && hasDirectImagePayload(payload),
+  )
+  if (standaloneImages.length > 0) {
+    const standalonePayload = { data: standaloneImages }
+    if (logEntry) {
+      logEntry.responseBody = sanitizeDebugValue(standalonePayload)
+    }
+    return standalonePayload
+  }
+
+  const lastJsonPayload = [...jsonPayloads].reverse().find(Boolean)
+  if (lastJsonPayload) {
+    if (logEntry) {
+      logEntry.responseBody = sanitizeDebugValue(lastJsonPayload)
+    }
+    return lastJsonPayload
+  }
+
+  if (logEntry && text.trim()) {
+    logEntry.responseText = summarizeDebugString(text)
+  }
+  throw createApiError('Images API 返回了 SSE，但未包含可解析的 JSON 事件', response.status, {
+    requestId,
+    details: text.trim() ? { responseText: text } : undefined,
+  })
+}
+
+function buildImagesRequestPlans(settings: AppSettings): ImagesRequestPlan[] {
+  return getPreferredResponsesTransports(settings).map((transport) => ({
+    id: transport,
+    transport,
+  }))
+}
+
 async function callImagesApi(
   opts: CallApiOptions,
   ctx: SharedRequestContext,
 ): Promise<CallApiResult> {
   const { settings, prompt, params, inputImageDataUrls, editMaskDataUrl } = opts
   const isEdit = inputImageDataUrls.length > 0
-  let response: Response
-  let debugLogEntry: ApiDebugRequestLogEntry | undefined
+  const requestPlans = buildImagesRequestPlans(settings)
+  let lastError: unknown = null
 
-  if (isEdit) {
-    const formData = new FormData()
-    formData.append('model', settings.model)
-    formData.append('prompt', prompt)
-    formData.append('size', params.size)
-    formData.append('quality', params.quality)
-    formData.append('output_format', params.output_format)
-    formData.append('moderation', params.moderation)
+  for (let planIndex = 0; planIndex < requestPlans.length; planIndex++) {
+    const plan = requestPlans[planIndex]
+    const nextPlan = requestPlans[planIndex + 1]
+    let debugLogEntry: ApiDebugRequestLogEntry | undefined
 
-    if (params.output_format !== 'png' && params.output_compression != null) {
-      formData.append('output_compression', String(params.output_compression))
+    try {
+      let response: Response
+
+      if (isEdit) {
+        const formData = new FormData()
+        formData.append('model', settings.model)
+        formData.append('prompt', prompt)
+        formData.append('size', params.size)
+        formData.append('quality', params.quality)
+        formData.append('output_format', params.output_format)
+        formData.append('moderation', params.moderation)
+
+        if (params.output_format !== 'png' && params.output_compression != null) {
+          formData.append('output_compression', String(params.output_compression))
+        }
+        if (plan.transport === 'stream') {
+          formData.append('stream', 'true')
+          formData.append('partial_images', '1')
+        }
+
+        for (let i = 0; i < inputImageDataUrls.length; i++) {
+          const dataUrl = inputImageDataUrls[i]
+          const blob = await dataUrlToBlob(dataUrl)
+          const ext = blob.type.split('/')[1] || 'png'
+          formData.append('image[]', blob, `input-${i + 1}.${ext}`)
+        }
+        if (editMaskDataUrl) {
+          const maskBlob = await dataUrlToBlob(editMaskDataUrl)
+          formData.append('mask', maskBlob, 'mask.png')
+        }
+
+        const requestUrl = buildRequestUrl(settings.baseUrl, 'images/edits', ctx)
+        debugLogEntry = createDebugRequestLogEntry(ctx, `images.edit.${plan.id}`, 'POST', requestUrl, {
+          model: settings.model,
+          prompt,
+          size: params.size,
+          quality: params.quality,
+          output_format: params.output_format,
+          moderation: params.moderation,
+          output_compression: params.output_format !== 'png' ? params.output_compression : undefined,
+          imageCount: inputImageDataUrls.length,
+          hasMask: Boolean(editMaskDataUrl),
+          stream: plan.transport === 'stream',
+          partial_images: plan.transport === 'stream' ? 1 : undefined,
+        })
+
+        response = await fetch(requestUrl, {
+          method: 'POST',
+          headers: ctx.requestHeaders,
+          cache: 'no-store',
+          body: formData,
+          signal: ctx.controller.signal,
+        })
+      } else {
+        const body: Record<string, unknown> = {
+          model: settings.model,
+          prompt,
+          size: params.size,
+          quality: params.quality,
+          output_format: params.output_format,
+          moderation: params.moderation,
+        }
+
+        if (params.output_format !== 'png' && params.output_compression != null) {
+          body.output_compression = params.output_compression
+        }
+        if (params.n > 1) {
+          body.n = params.n
+        }
+        if (plan.transport === 'stream') {
+          body.stream = true
+          body.partial_images = 1
+        }
+
+        const requestUrl = buildRequestUrl(settings.baseUrl, 'images/generations', ctx)
+        debugLogEntry = createDebugRequestLogEntry(ctx, `images.generate.${plan.id}`, 'POST', requestUrl, body)
+
+        response = await fetch(requestUrl, {
+          method: 'POST',
+          headers: {
+            ...ctx.requestHeaders,
+            'Content-Type': 'application/json',
+          },
+          cache: 'no-store',
+          body: JSON.stringify(body),
+          signal: ctx.controller.signal,
+        })
+      }
+
+      if (!response.ok) {
+        throw await buildApiErrorFromResponse(response, debugLogEntry)
+      }
+
+      const requestId = attachDebugResponseMeta(debugLogEntry, response)
+      const payload = await readImagesPayload(response, debugLogEntry)
+      const images = await parseImagesFromPayload(payload, ctx.mime, ctx.controller.signal)
+      if (!images.length) {
+        if (debugLogEntry) {
+          debugLogEntry.responseBody = sanitizeDebugValue(payload)
+        }
+        throw createApiError('接口未返回可用图片数据', response.status, {
+          requestId,
+          details: {
+            responseBody: payload,
+          },
+        })
+      }
+
+      return { images }
+    } catch (error) {
+      lastError = error
+      const isLastPlan = planIndex === requestPlans.length - 1
+      if (isLastPlan || !shouldFallbackImagesStreamToJson(error, plan, nextPlan)) {
+        throw error
+      }
     }
-
-    for (let i = 0; i < inputImageDataUrls.length; i++) {
-      const dataUrl = inputImageDataUrls[i]
-      const blob = await dataUrlToBlob(dataUrl)
-      const ext = blob.type.split('/')[1] || 'png'
-      formData.append('image[]', blob, `input-${i + 1}.${ext}`)
-    }
-    if (editMaskDataUrl) {
-      const maskBlob = await dataUrlToBlob(editMaskDataUrl)
-      formData.append('mask', maskBlob, 'mask.png')
-    }
-
-    const requestUrl = buildRequestUrl(settings.baseUrl, 'images/edits', ctx)
-    debugLogEntry = createDebugRequestLogEntry(ctx, 'images.edit', 'POST', requestUrl, {
-      model: settings.model,
-      prompt,
-      size: params.size,
-      quality: params.quality,
-      output_format: params.output_format,
-      moderation: params.moderation,
-      output_compression: params.output_format !== 'png' ? params.output_compression : undefined,
-      imageCount: inputImageDataUrls.length,
-      hasMask: Boolean(editMaskDataUrl),
-    })
-
-    response = await fetch(requestUrl, {
-      method: 'POST',
-      headers: ctx.requestHeaders,
-      cache: 'no-store',
-      body: formData,
-      signal: ctx.controller.signal,
-    })
-  } else {
-    const body: Record<string, unknown> = {
-      model: settings.model,
-      prompt,
-      size: params.size,
-      quality: params.quality,
-      output_format: params.output_format,
-      moderation: params.moderation,
-    }
-
-    if (params.output_format !== 'png' && params.output_compression != null) {
-      body.output_compression = params.output_compression
-    }
-    if (params.n > 1) {
-      body.n = params.n
-    }
-
-    const requestUrl = buildRequestUrl(settings.baseUrl, 'images/generations', ctx)
-    debugLogEntry = createDebugRequestLogEntry(ctx, 'images.generate', 'POST', requestUrl, body)
-
-    response = await fetch(requestUrl, {
-      method: 'POST',
-      headers: {
-        ...ctx.requestHeaders,
-        'Content-Type': 'application/json',
-      },
-      cache: 'no-store',
-      body: JSON.stringify(body),
-      signal: ctx.controller.signal,
-    })
   }
 
-  if (!response.ok) {
-    throw await buildApiErrorFromResponse(response, debugLogEntry)
-  }
-
-  attachDebugResponseMeta(debugLogEntry, response)
-  const payload = await response.json() as ImageApiResponse
-  const images = await parseImagesFromPayload(payload, ctx.mime, ctx.controller.signal)
-  if (!images.length) {
-    if (debugLogEntry) {
-      debugLogEntry.responseBody = sanitizeDebugValue(payload)
-    }
-    throw createApiError('接口未返回可用图片数据', response.status, {
-      requestId: readDevProxyRequestId(response.headers),
-      details: {
-        responseBody: payload,
-      },
-    })
-  }
-
-  return { images }
+  throw lastError instanceof Error ? lastError : createApiError('Images API 请求失败')
 }
 
 async function uploadInputImageAsFileId(
@@ -1628,12 +1857,19 @@ function buildResponsesRequestPlans(
   }
 
   if (!hasEditMask) {
+    const forcedToolInputPayloadMode: ResponsesInputPayloadMode =
+      !hasReferenceImages && defaultInputPayloadMode !== 'message-list'
+        ? 'message-list'
+        : defaultInputPayloadMode
+    const forcedToolActionMode: ResponsesActionMode =
+      hasReferenceImages || forcedToolInputPayloadMode === 'message-list' ? 'explicit' : 'auto'
+
     for (const transport of compatibilityTransports) {
       pushPlan({
-        id: `forced-tool-${transport}-${defaultInputPayloadMode}`,
-        inputPayloadMode: defaultInputPayloadMode,
+        id: `forced-tool-${transport}-${forcedToolInputPayloadMode}`,
+        inputPayloadMode: forcedToolInputPayloadMode,
         transport,
-        actionMode: hasReferenceImages ? 'explicit' : 'auto',
+        actionMode: forcedToolActionMode,
         toolChoiceMode: 'force',
       })
     }

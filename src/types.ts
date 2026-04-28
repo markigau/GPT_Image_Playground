@@ -65,7 +65,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   responsesTransport: 'auto',
   responsesImageInputMode: 'auto',
   responsesPromptRevisionMode: 'allow',
-  timeout: 300,
+  timeout: 900,
   apiProtocol: 'images',
   requestMode: DEFAULT_REQUEST_MODE,
 }

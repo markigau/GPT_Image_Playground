@@ -371,7 +371,7 @@ export default function SettingsModal() {
               </label>
 
               <label className="block">
-                <span className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Responses 传输方式</span>
+                <span className="block text-xs text-gray-500 dark:text-gray-400 mb-1">传输方式</span>
                 <Select
                   value={draft.responsesTransport}
                   onChange={(value) =>
@@ -381,8 +381,9 @@ export default function SettingsModal() {
                   className="w-full rounded-xl border border-gray-200/70 bg-white/60 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
                 />
                 <div className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
-                  <div>自动：先尝试 <code className="bg-gray-100 dark:bg-white/[0.06] px-1 py-0.5 rounded">stream: true</code>，中转不兼容时再回退普通 JSON。</div>
-                  <div>优先流式：更有机会绕过 Cloudflare 120 秒空闲超时，但前提是整条中转链路支持 SSE 透传。</div>
+                  <div>同时影响 Images API 和 Responses API。</div>
+                  <div>自动：先尝试流式；中转不兼容时再回退普通 JSON。</div>
+                  <div>优先流式：Images API 会带 <code className="bg-gray-100 dark:bg-white/[0.06] px-1 py-0.5 rounded">stream: true</code> 与 <code className="bg-gray-100 dark:bg-white/[0.06] px-1 py-0.5 rounded">partial_images: 1</code>，Responses API 会走 SSE。</div>
                 </div>
               </label>
 
@@ -437,7 +438,7 @@ export default function SettingsModal() {
                   onBlur={commitTimeout}
                   type="number"
                   min={10}
-                  max={600}
+                  max={900}
                   className="w-full rounded-xl border border-gray-200/70 bg-white/60 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
                 />
               </label>

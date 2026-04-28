@@ -10,6 +10,7 @@ interface Props {
   onOpen: () => void
   onReuse: () => void
   onEdit: () => void
+  onRetry: () => void
   onToggleFavorite: () => void
   onMoveCategory: () => void
   onDelete: () => void
@@ -60,6 +61,7 @@ export default function TaskContextMenu({
   onOpen,
   onReuse,
   onEdit,
+  onRetry,
   onToggleFavorite,
   onMoveCategory,
   onDelete,
@@ -166,15 +168,23 @@ export default function TaskContextMenu({
             </svg>
           </MenuItem>
           <MenuItem
-            label="编辑输出"
-            disabled={!task.outputImages?.length}
+            label={task.status === 'error' ? '重试' : '编辑输出'}
+            disabled={task.status !== 'error' && !task.outputImages?.length}
             onClick={() => {
               onClose()
+              if (task.status === 'error') {
+                onRetry()
+                return
+              }
               onEdit()
             }}
           >
             <svg className="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              {task.status === 'error' ? (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m14.216 2A7.5 7.5 0 005.582 9m0 0H10m10 11v-5h-.581m0 0H14a7.5 7.5 0 01-13.418-2" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              )}
             </svg>
           </MenuItem>
           <MenuItem

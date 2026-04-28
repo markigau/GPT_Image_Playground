@@ -1087,6 +1087,33 @@ export async function submitTask() {
   executeTask(taskId, requestSettings)
 }
 
+export async function retryTask(task: TaskRecord) {
+  if (isTaskInRecycleBin(task)) {
+    useStore.getState().showToast('回收站中的任务无法重试', 'error')
+    return
+  }
+
+  const currentTask = useStore.getState().tasks.find((item) => item.id === task.id) ?? task
+  if (currentTask.status === 'running') {
+    useStore.getState().showToast('该任务正在进行中', 'info')
+    return
+  }
+
+  const nextCreatedAt = Date.now()
+  updateTaskInStore(currentTask.id, {
+    status: 'running',
+    error: null,
+    errorDebug: null,
+    outputImages: [],
+    responseMeta: null,
+    finishedAt: null,
+    elapsed: null,
+    createdAt: nextCreatedAt,
+  })
+  useStore.getState().showToast('已开始重试', 'info')
+  void executeTask(currentTask.id)
+}
+
 async function executeTask(taskId: string, requestSettings?: AppSettings) {
   const { settings, providers } = useStore.getState()
   const task = useStore.getState().tasks.find((t) => t.id === taskId)

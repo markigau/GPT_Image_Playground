@@ -13,6 +13,7 @@ import {
   useStore,
   reuseConfig,
   editOutputs,
+  retryTask,
   moveTaskToCategory,
   moveTasksToCategory,
   setTasksFavorite,
@@ -528,6 +529,7 @@ export default function TaskGrid() {
                 onToggleSelect={() => toggleTaskSelection(task.id)}
                 onReuse={() => reuseConfig(task)}
                 onEditOutputs={() => editOutputs(task)}
+                onRetry={() => retryTask(task)}
                 onToggleFavorite={() => {
                   void toggleTaskFavorite(task)
                 }}
@@ -596,6 +598,11 @@ export default function TaskGrid() {
         onEdit={() => {
           if (contextMenuState?.task) {
             void editOutputs(contextMenuState.task)
+          }
+        }}
+        onRetry={() => {
+          if (contextMenuState?.task) {
+            void retryTask(contextMenuState.task)
           }
         }}
         onToggleFavorite={() => {
