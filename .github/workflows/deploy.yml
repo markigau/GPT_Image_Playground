@@ -25,10 +25,15 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
       - run: npm ci
       - run: npm run build
+        env:
+          VITE_BASE: /${{ github.event.repository.name }}/
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: dist
 

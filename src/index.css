@@ -58,6 +58,17 @@ input[type="number"] {
   mask-image: linear-gradient(to right, black 85%, transparent 100%);
 }
 
+.mask-edge-x {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, black 3.5%, black 96.5%, transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, black 3.5%, black 96.5%, transparent 100%);
+}
+
+.category-wheel-track {
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
+}
+
 @keyframes toast-enter {
   0% { transform: translate(-50%, 16px); opacity: 0; }
   100% { transform: translate(-50%, 0); opacity: 1; }
@@ -93,6 +104,24 @@ input[type="number"] {
 }
 .animate-slide-down-in {
   animation: slide-down-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* 侧边抽屉：从右侧滑入 */
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(28px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.animate-slide-in-right {
+  animation: slide-in-right 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* 底部抽屉：向上滑入 */
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-up {
+  animation: slide-up 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 /* Lightbox：淡入 */

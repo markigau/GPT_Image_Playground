@@ -49,6 +49,14 @@ export interface CategoryConfig {
   createdAt: number
 }
 
+export interface PromptLibraryItem {
+  id: string
+  title: string
+  content: string
+  createdAt: number
+  updatedAt: number
+}
+
 export const ALL_CATEGORY_FILTER = '__all__'
 export const FAVORITES_CATEGORY_FILTER = '__favorites__'
 export const UNCATEGORIZED_CATEGORY_FILTER = '__uncategorized__'
@@ -342,6 +350,7 @@ export interface ExportData {
   categories?: CategoryConfig[]
   activeCategoryFilter?: string
   params?: TaskParams
+  promptLibrary?: PromptLibraryItem[]
   persistedState?: Record<string, unknown>
   tasks: TaskRecord[]
   /** imageId → 图片信息 */

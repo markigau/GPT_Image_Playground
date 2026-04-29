@@ -1,2 +1,2 @@
 export { default as ImageContextMenu } from './components/ImageContextMenu'
-export { default as TaskGrid } from './components/TaskGrid'
+export { default as TaskGrid } from './components/task-grid/TaskGrid'

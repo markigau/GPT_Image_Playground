@@ -3,6 +3,7 @@ import type {
   CategoryConfig,
   ImageEditSession,
   InputImage,
+  PromptLibraryItem,
   ProviderConfig,
   TaskParams,
   TaskRecord,
@@ -22,6 +23,10 @@ export interface AppState {
 
   prompt: string
   setPrompt: (prompt: string) => void
+  promptLibrary: PromptLibraryItem[]
+  replacePromptLibrary: (items: PromptLibraryItem[]) => void
+  savePromptLibraryItem: (input: { title?: string; content: string }) => PromptLibraryItem
+  removePromptLibraryItem: (id: string) => void
   inputImages: InputImage[]
   addInputImage: (image: InputImage) => void
   removeInputImage: (index: number) => void
@@ -58,6 +63,8 @@ export interface AppState {
   setLightboxImageId: (id: string | null, list?: string[]) => void
   showSettings: boolean
   setShowSettings: (visible: boolean) => void
+  showPromptLibrary: boolean
+  setShowPromptLibrary: (visible: boolean) => void
 
   toast: { message: string; type: 'info' | 'success' | 'error' } | null
   showToast: (message: string, type?: 'info' | 'success' | 'error') => void
@@ -74,7 +81,13 @@ export interface AppState {
 export type PersistedAppStateSnapshot = Partial<
   Pick<
     AppState,
-    'settings' | 'providers' | 'activeProviderId' | 'categories' | 'activeCategoryFilter' | 'params'
+    | 'settings'
+    | 'providers'
+    | 'activeProviderId'
+    | 'categories'
+    | 'activeCategoryFilter'
+    | 'params'
+    | 'promptLibrary'
   >
 > &
   Record<string, unknown>

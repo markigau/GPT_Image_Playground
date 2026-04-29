@@ -1,1 +1,1 @@
-export { default as SettingsModal } from './components/SettingsModal'
+export { default as SettingsModal } from './components/settings-modal/SettingsModal'

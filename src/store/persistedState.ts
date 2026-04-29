@@ -3,6 +3,7 @@ import {
   createInitialProviderState,
   getProviderSettings,
   normalizeCategoryList,
+  normalizePromptLibraryItems,
   normalizeProviderList,
   resolveActiveCategoryFilter,
 } from './domain'
@@ -15,6 +16,7 @@ export function buildPersistedAppStateSnapshot(state: AppState): PersistedAppSta
     categories: state.categories,
     activeCategoryFilter: state.activeCategoryFilter,
     params: state.params,
+    promptLibrary: state.promptLibrary,
   }
 }
 
@@ -32,6 +34,7 @@ export function mergePersistedAppState(
 ): AppState {
   const normalizedProviders = normalizeProviderList(persistedState?.providers)
   const normalizedCategories = normalizeCategoryList(persistedState?.categories)
+  const normalizedPromptLibrary = normalizePromptLibraryItems(persistedState?.promptLibrary)
   const providerState =
     normalizedProviders.length > 0
       ? (() => {
@@ -65,5 +68,6 @@ export function mergePersistedAppState(
       ...currentState.params,
       ...persistedState?.params,
     },
+    promptLibrary: normalizedPromptLibrary,
   }
 }

@@ -44,9 +44,23 @@ npm run preview
 │  ├─ app/                      应用级骨架组件
 │  ├─ features/                 按功能拆分的业务 UI 模块
 │  │  ├─ gallery/
+│  │  │  └─ components/
+│  │  │     ├─ task-card/       任务卡片继续按预览 / 元信息 / 操作区 / hook 拆分
+│  │  │     └─ task-grid/       任务网格继续按容器 / 工具条 / 网格体 / 框选 hook 拆分
 │  │  ├─ input/
+│  │  │  └─ components/
+│  │  │     ├─ input-bar/       输入面板继续按提示词 / 参考图 / 参数 / 本地状态 hook 拆分
+│  │  │     ├─ prompt-library-drawer/ 提示词库继续按头部 / 保存表单 / 列表拆分
+│  │  │     ├─ search-bar/      搜索栏继续按分类轨道 / 筛选 / 状态 hook / 移动端摘要拆分
+│  │  │     └─ size-picker/     尺寸选择器继续按标签区 / 模式面板 / 共享常量拆分
 │  │  ├─ settings/
+│  │  │  └─ components/
+│  │  │     └─ settings-modal/  设置抽屉继续按供应商 / 凭据 / 请求策略 / 数据管理分区拆分
 │  │  └─ viewer/
+│  │     └─ components/
+│  │        ├─ detail-modal/    详情弹窗继续按预览区 / 信息区 / 图片状态 hook 拆分
+│  │        ├─ image-edit-modal/ 局部编辑弹窗继续按画布区 / 侧栏 / 选区 hook / 状态 hook 拆分
+│  │        └─ lightbox/        大图查看继续按状态导航 / 缩放手势 / 视图壳层拆分
 │  ├─ hooks/                    自定义 hooks
 │  ├─ lib/                      基础能力与适配层
 │  │  ├─ api/                   Images / Responses 协议实现
@@ -67,6 +81,7 @@ npm run preview
 架构约束：
 
 - `src/features/*` 放业务模块。
+- 复杂 feature 允许继续下钻子目录，例如 `components/input-bar/*`、`components/prompt-library-drawer/*`、`components/search-bar/*`、`components/size-picker/*`、`components/task-grid/*`、`components/task-card/*`、`components/settings-modal/*`、`components/detail-modal/*`、`components/image-edit-modal/*`、`components/lightbox/*`。
 - `src/shared/components` 只放跨模块复用的通用组件。
 - `src/store/*` 放状态、任务编排、缓存、导入导出等逻辑实现。
 - `src/lib/api/*` 放协议适配与请求编排；`src/lib/api.ts` 仅作为统一导出入口。

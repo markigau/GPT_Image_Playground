@@ -4,11 +4,13 @@ import { ALL_CATEGORY_FILTER, DEFAULT_PARAMS } from '../types'
 import { deleteCachedImage } from './cache'
 import type { AppState } from './contracts'
 import {
+  createPromptLibraryItem,
   createInitialProviderState,
   createProviderConfig,
   getNextProviderName,
   getProviderSettings,
   normalizeCategoryList,
+  normalizePromptLibraryItems,
   normalizeProviderList,
   resolveActiveCategoryFilter,
 } from './domain'
@@ -102,6 +104,22 @@ export const useStore = create<AppState>()(
 
       prompt: '',
       setPrompt: (prompt) => set({ prompt }),
+      promptLibrary: [],
+      replacePromptLibrary: (promptLibrary) =>
+        set(() => ({
+          promptLibrary: normalizePromptLibraryItems(promptLibrary),
+        })),
+      savePromptLibraryItem: ({ title, content }) => {
+        const nextItem = createPromptLibraryItem(content, title)
+        set((state) => ({
+          promptLibrary: [nextItem, ...state.promptLibrary.filter((item) => item.id !== nextItem.id)],
+        }))
+        return nextItem
+      },
+      removePromptLibraryItem: (id) =>
+        set((state) => ({
+          promptLibrary: state.promptLibrary.filter((item) => item.id !== id),
+        })),
       inputImages: [],
       addInputImage: (image) =>
         set((state) => {
@@ -204,7 +222,17 @@ export const useStore = create<AppState>()(
           lightboxImageList: list ?? (lightboxImageId ? [lightboxImageId] : []),
         }),
       showSettings: false,
-      setShowSettings: (showSettings) => set({ showSettings }),
+      setShowSettings: (showSettings) =>
+        set((state) => ({
+          showSettings,
+          showPromptLibrary: showSettings ? false : state.showPromptLibrary,
+        })),
+      showPromptLibrary: false,
+      setShowPromptLibrary: (showPromptLibrary) =>
+        set((state) => ({
+          showPromptLibrary,
+          showSettings: showPromptLibrary ? false : state.showSettings,
+        })),
 
       toast: null,
       showToast: (message, type = 'info') => {

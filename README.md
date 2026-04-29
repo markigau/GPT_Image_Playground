@@ -49,13 +49,32 @@
 
 ```text
 React UI
-  ├─ features/              输入区、画廊、查看器、设置等按功能拆分的 UI 模块
-  ├─ shared/components/     通用弹窗、Toast、Select 等共享组件
-  ├─ store/                 状态管理、任务编排、分类/收藏/回收站、导入导出
-  ├─ lib/api/               Images API / Responses API / 本地代理 / SSE 解析 / 协议回退
-  ├─ IndexedDB + 内存缓存   图片、任务、完整错误日志持久化、去重、按需读取
-  ├─ Dev Proxy Logger       本地代理请求转发与开发机 success/error 日志落盘
-  └─ PWA Shell              manifest + service worker
+  ├─ features/                    输入区、画廊、查看器、设置等按功能拆分的 UI 模块
+  │  ├─ input/components/
+  │  │  ├─ input-bar/            输入面板按提示词 / 参考图 / 参数 / 本地状态 hook 拆分
+  │  │  ├─ prompt-library-drawer/ 提示词库按头部 / 保存表单 / 列表拆分
+  │  │  ├─ search-bar/           画廊筛选栏按摘要、分类轨道、筛选区、状态 hook / 循环滚动 hook 拆分
+  │  │  ├─ size-picker/          尺寸选择器按模式面板 / 标签区 / 共享常量拆分
+  │  │  ├─ PromptLibraryDrawer   薄入口，转发到 prompt-library-drawer/
+  │  │  ├─ SearchBar             薄入口，转发到 search-bar/
+  │  │  └─ SizePickerModal       薄入口，转发到 size-picker/
+  │  ├─ settings/components/
+  │  │  └─ settings-modal/       设置抽屉按供应商 / 凭据 / 请求策略 / 数据管理拆分
+  │  ├─ gallery/components/
+  │  │  ├─ task-grid/            网格容器按框选 hook、工具条、网格体、覆盖层拆分
+  │  │  ├─ task-card/            卡片按预览区、元信息、操作区、状态 hook 拆分
+  │  │  └─ ...                   右键菜单、移动分类弹窗等独立组件
+  │  └─ viewer/components/
+  │     ├─ detail-modal/         详情弹窗按预览区、信息区、图片状态 hook 拆分
+  │     ├─ image-edit-modal/     局部编辑弹窗按画布区、侧栏、选区 hook、状态 hook 拆分
+  │     ├─ lightbox/             大图查看按状态导航、缩放手势、视图壳层拆分
+  │     └─ ...                   大图查看、局部编辑等查看器模块
+  ├─ shared/components/          通用弹窗、Toast、Select 等共享组件
+  ├─ store/                      状态管理、任务编排、分类/收藏/回收站、导入导出
+  ├─ lib/api/                    Images API / Responses API / 本地代理 / SSE 解析 / 协议回退
+  ├─ IndexedDB + 内存缓存        图片、任务、完整错误日志持久化、去重、按需读取
+  ├─ Dev Proxy Logger            本地代理请求转发与开发机 success/error 日志落盘
+  └─ PWA Shell                   manifest + service worker
 ```
 
 核心数据流：
@@ -78,6 +97,9 @@ React UI
 
 - 协议适配层
   `src/lib/api.ts` 是统一入口，具体实现拆分在 `src/lib/api/` 下，负责封装 `images/generations`、`images/edits`、`responses` 三类请求，并处理自动回退、SSE 解析、图片内联压缩、文件上传等差异。
+
+- 组件分层细化
+  当单个功能模块继续膨胀时，会在 feature 内部继续下钻子目录，例如 `input-bar/`、`prompt-library-drawer/`、`search-bar/`、`size-picker/`、`task-grid/`、`task-card/`、`settings-modal/`、`detail-modal/`、`image-edit-modal/`、`lightbox/`，把容器、分区组件、交互 hook、选项常量和交互壳层拆开，而不是继续把实现堆回单个入口文件。
 
 - 长请求传输策略
   设置中的传输偏好会同时影响 `Images API` 与 `Responses API`。兼容时优先走流式；不兼容时自动回退到普通 JSON，并把任务最终实际走的是 `流式 / JSON / JSON（降级）` 记录到任务元信息与界面状态里。
@@ -247,6 +269,30 @@ npm run preview
 ├─ src/
 │  ├─ app/                      应用级骨架组件
 │  ├─ features/                 按功能拆分的业务 UI 模块
+│  │  ├─ gallery/components/
+│  │  │  ├─ task-card/          任务卡片拆分后的真实实现
+│  │  │  ├─ task-grid/          任务网格拆分后的真实实现
+│  │  │  ├─ TaskCard.tsx        薄入口
+│  │  │  └─ TaskGrid.tsx        薄入口
+│  │  ├─ input/components/
+│  │  │  ├─ input-bar/          输入面板拆分后的真实实现
+│  │  │  ├─ prompt-library-drawer/ 提示词库拆分后的真实实现
+│  │  │  ├─ search-bar/         搜索/分类栏拆分后的真实实现
+│  │  │  ├─ size-picker/        尺寸选择器拆分后的真实实现
+│  │  │  ├─ InputBar.tsx        薄入口
+│  │  │  ├─ PromptLibraryDrawer.tsx 薄入口
+│  │  │  ├─ SearchBar.tsx       薄入口
+│  │  │  └─ SizePickerModal.tsx 薄入口
+│  │  ├─ settings/components/
+│  │     ├─ settings-modal/     设置抽屉按 API 分区 / 数据管理拆分后的真实实现
+│  │     └─ SettingsModal.tsx   薄入口
+│  │  └─ viewer/components/
+│  │     ├─ detail-modal/       详情弹窗拆分后的真实实现
+│  │     ├─ image-edit-modal/   局部编辑弹窗拆分后的真实实现
+│  │     ├─ lightbox/           大图查看拆分后的真实实现
+│  │     ├─ DetailModal.tsx     薄入口
+│  │     ├─ ImageEditModal.tsx  薄入口
+│  │     └─ Lightbox.tsx        薄入口
 │  ├─ hooks/                    自定义 hooks
 │  ├─ lib/                      API 适配、尺寸处理、DB、代理等基础模块
 │  ├─ shared/                   共享组件

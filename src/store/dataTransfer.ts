@@ -5,10 +5,12 @@ import { DEFAULT_PARAMS } from '../types'
 import { clearImageCaches, setCachedImage } from './cache'
 import {
   getImportedCategoriesFromExport,
+  getImportedPromptLibraryFromExport,
   getImportedProvidersFromExport,
   getTaskReferencedImageIds,
   isRemoteImageUrl,
   mergeImportedCategories,
+  mergePromptLibraryItems,
   mergeImportedProviders,
   remapImportedTaskRelations,
 } from './domain'
@@ -26,9 +28,11 @@ export async function clearAllData() {
     clearInputImages,
     replaceProviderState,
     replaceCategoryState,
+    replacePromptLibrary,
     setParams,
     setTaskView,
     setImageEditSession,
+    setShowPromptLibrary,
     showToast,
   } = useStore.getState()
 
@@ -36,9 +40,11 @@ export async function clearAllData() {
   clearInputImages()
   replaceProviderState([])
   replaceCategoryState([])
+  replacePromptLibrary([])
   setParams({ ...DEFAULT_PARAMS })
   setTaskView('gallery')
   setImageEditSession(null)
+  setShowPromptLibrary(false)
   showToast('所有数据已清空', 'success')
 }
 
@@ -104,7 +110,7 @@ export async function exportData() {
     }
 
     const manifest: ExportData = {
-      version: 5,
+      version: 6,
       exportedAt: new Date(exportedAt).toISOString(),
       settings: appStateSnapshot.settings as AppSettings,
       providers: appStateSnapshot.providers as ProviderConfig[] | undefined,
@@ -112,6 +118,7 @@ export async function exportData() {
       categories: appStateSnapshot.categories as CategoryConfig[] | undefined,
       activeCategoryFilter: appStateSnapshot.activeCategoryFilter as string | undefined,
       params: appStateSnapshot.params as TaskParams | undefined,
+      promptLibrary: appStateSnapshot.promptLibrary as ExportData['promptLibrary'],
       persistedState: appStateSnapshot,
       tasks,
       imageFiles,
@@ -159,6 +166,7 @@ export async function importData(file: File) {
     const existingTaskIds = new Set(existingTasks.map((task) => task.id))
     const importedProviders = getImportedProvidersFromExport(data, persistedStateSnapshot)
     const importedCategories = getImportedCategoriesFromExport(data, persistedStateSnapshot)
+    const importedPromptLibrary = getImportedPromptLibraryFromExport(data, persistedStateSnapshot)
     const { providers: mergedProviders, providerIdMap, addedProviderCount } = mergeImportedProviders(
       currentState.providers,
       importedProviders,
@@ -167,6 +175,8 @@ export async function importData(file: File) {
       currentState.categories,
       importedCategories,
     )
+    const { promptLibrary: mergedPromptLibrary, addedCount: addedPromptLibraryCount } =
+      mergePromptLibraryItems(currentState.promptLibrary, importedPromptLibrary)
 
     const tasksToImport = data.tasks
       .filter((task) => !existingTaskIds.has(task.id))
@@ -219,6 +229,7 @@ export async function importData(file: File) {
 
     useStore.getState().replaceProviderState(mergedProviders, currentState.activeProviderId)
     useStore.getState().replaceCategoryState(mergedCategories, currentState.activeCategoryFilter)
+    useStore.getState().replacePromptLibrary(mergedPromptLibrary)
 
     const tasks = await getAllTasks()
     useStore.getState().setTasks(tasks)
@@ -233,6 +244,9 @@ export async function importData(file: File) {
     }
     if (addedCategoryCount > 0) {
       summaryParts.push(`新增 ${addedCategoryCount} 个分类`)
+    }
+    if (addedPromptLibraryCount > 0) {
+      summaryParts.push(`新增 ${addedPromptLibraryCount} 条提示词`)
     }
     useStore.getState().showToast(summaryParts.join('，'), 'success')
   } catch (error) {

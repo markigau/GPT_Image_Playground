@@ -426,6 +426,7 @@ async function proxyDevRequest(
 
 export default defineConfig(({ command }) => {
   const devProxyConfig = command === 'serve' ? loadDevProxyConfig() : null
+  const buildBase = process.env.VITE_BASE?.trim()
 
   return {
     plugins: [
@@ -441,7 +442,7 @@ export default defineConfig(({ command }) => {
         },
       },
     ],
-    base: './',
+    base: command === 'build' ? buildBase || './' : '/',
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version),
       __DEV_PROXY_CONFIG__: JSON.stringify(devProxyConfig),
