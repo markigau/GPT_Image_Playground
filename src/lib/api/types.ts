@@ -64,6 +64,7 @@ export type ResponsesInputPayloadMode = 'compact-string' | 'message-list'
 export type ResponsesTransportKind = 'json' | 'stream'
 export type ResponsesActionMode = 'auto' | 'explicit'
 export type ResponsesToolChoiceMode = 'omit' | 'force'
+export type ImagesRequestBodyMode = 'json' | 'multipart'
 
 export interface ResponsesRequestPlan {
   id: string
@@ -76,6 +77,7 @@ export interface ResponsesRequestPlan {
 export interface ImagesRequestPlan {
   id: string
   transport: ResponsesTransportKind
+  bodyMode: ImagesRequestBodyMode
 }
 
 export interface ParsedSseEvent {
@@ -87,5 +89,6 @@ export interface ParsedSseEvent {
 export interface StreamedPayloadResult {
   payload: unknown
   streamedFinalImageCount: number
+  streamedImages: string[]
   actualTransport: ActualTransportKind
 }

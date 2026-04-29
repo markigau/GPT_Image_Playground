@@ -21,8 +21,8 @@ export async function callImageApi(opts: CallApiOptions): Promise<CallApiResult>
   }
 
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), settings.timeout * 1000)
-  opts.registerAbort?.(() => controller.abort())
+  const timeoutId = setTimeout(() => controller.abort('timeout'), settings.timeout * 1000)
+  opts.registerAbort?.(() => controller.abort('user'))
   let normalizedOpts = opts
 
   try {

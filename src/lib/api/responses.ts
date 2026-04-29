@@ -15,6 +15,7 @@ import {
   getResponsesImageModel,
   getResponsesTransportMode,
   isDataUrl,
+  isSseResponse,
   isHttpUrl,
   isRecord,
   mergeTaskResponseMeta,
@@ -314,8 +315,7 @@ function buildResponsesRequestPlans(
 ): ResponsesRequestPlan[] {
   const hasReferenceImages = inputImages.length > 0
   const hasEditMask = Boolean(opts.editMaskDataUrl)
-  const defaultInputPayloadMode: ResponsesInputPayloadMode =
-    hasReferenceImages ? 'message-list' : 'compact-string'
+  const defaultInputPayloadMode: ResponsesInputPayloadMode = 'message-list'
   const transports = getPreferredResponsesTransports(opts.settings)
   const primaryTransports: ResponsesTransportKind[] =
     hasEditMask && getResponsesTransportMode(opts.settings) === 'auto'
@@ -353,7 +353,7 @@ function buildResponsesRequestPlans(
     }
   }
 
-  if (!hasReferenceImages) {
+  if (!hasReferenceImages && defaultInputPayloadMode !== 'message-list') {
     for (const transport of compatibilityTransports) {
       pushPlan({
         id: `message-list-${transport}`,
@@ -422,9 +422,6 @@ function buildResponsesBody(
   if (plan.actionMode === 'explicit') {
     tool.action = hasReferenceImages ? 'edit' : 'generate'
   }
-  if (plan.transport === 'stream') {
-    tool.partial_images = 1
-  }
 
   const body: Record<string, unknown> = {
     model: settings.model,
@@ -475,7 +472,7 @@ async function callResponsesApiWithInputMode(
   ctx: SharedRequestContext,
   responsesImageInputMode: ResponsesImageInputMode,
 ): Promise<CallApiResult> {
-  const requestCount = Math.max(1, opts.params.n || 1)
+  let remainingImageCount = Math.max(1, opts.params.n || 1)
   const images: string[] = []
   const responseImageGenerationCalls: Parameters<typeof buildTaskResponseMetaFromCalls>[0] = []
   let finalTransportMeta: AppliedTransportMeta | undefined
@@ -497,7 +494,7 @@ async function callResponsesApiWithInputMode(
   const requestPlans = buildResponsesRequestPlans(opts, inputImages)
 
   try {
-    for (let index = 0; index < requestCount; index += 1) {
+    while (remainingImageCount > 0) {
       let lastError: unknown = null
 
       for (let planIndex = 0; planIndex < requestPlans.length; planIndex += 1) {
@@ -507,7 +504,12 @@ async function callResponsesApiWithInputMode(
         try {
           let actualTransport: ActualTransportKind = 'json'
           const requestUrl = buildRequestUrl(opts.settings.baseUrl, 'responses', ctx)
-          const requestBody = buildResponsesBody(opts, inputImages, editMask, plan)
+          const requestBody = buildResponsesBody(
+            opts,
+            inputImages,
+            editMask,
+            plan,
+          )
           const debugLogEntry = createDebugRequestLogEntry(
             ctx,
             `responses.${plan.id}`,
@@ -531,21 +533,26 @@ async function callResponsesApiWithInputMode(
           }
 
           const requestId = readDevProxyRequestId(response.headers)
+          const shouldReadAsStream = plan.transport === 'stream' || isSseResponse(response)
           const streamResult =
-            plan.transport === 'stream'
+            shouldReadAsStream
               ? await readResponsesPayloadStream(
                   response,
                   ctx.mime,
                   ctx.controller.signal,
-                  opts.onFinalImages,
                   debugLogEntry,
                 )
               : null
           const payload = streamResult?.payload ?? (await readResponsesPayload(response, debugLogEntry))
-          const streamedFinalImageCount = streamResult?.streamedFinalImageCount ?? 0
+          const streamedImages = streamResult?.streamedImages ?? []
           actualTransport = streamResult?.actualTransport ?? 'json'
-          responseImageGenerationCalls.push(...collectImageGenerationCallsFromPayload(payload))
-          const parsedImages = await parseImagesFromPayload(payload, ctx.mime, ctx.controller.signal)
+          for (const call of collectImageGenerationCallsFromPayload(payload)) {
+            responseImageGenerationCalls.push(call)
+          }
+          const parsedImages =
+            actualTransport === 'stream' && streamedImages.length > 0
+              ? streamedImages
+              : await parseImagesFromPayload(payload, ctx.mime, ctx.controller.signal)
           if (!parsedImages.length) {
             debugLogEntry.responseBody = sanitizeDebugValue(payload)
             throw createApiError('Responses API 未返回可用图片数据', response.status, {
@@ -556,9 +563,7 @@ async function callResponsesApiWithInputMode(
             })
           }
 
-          if (streamedFinalImageCount < parsedImages.length) {
-            await emitFinalImages(opts, parsedImages.slice(streamedFinalImageCount))
-          }
+          await emitFinalImages(opts, parsedImages)
           const fallbackFromStream =
             actualTransport === 'json' &&
             requestPlans.slice(0, planIndex).some((item) => item.transport === 'stream')
@@ -567,7 +572,10 @@ async function callResponsesApiWithInputMode(
             actualTransport,
             fallbackFromStream,
           )
-          images.push(...parsedImages)
+          for (const image of parsedImages) {
+            images.push(image)
+          }
+          remainingImageCount = Math.max(0, remainingImageCount - parsedImages.length)
           lastError = null
           break
         } catch (error) {

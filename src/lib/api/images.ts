@@ -8,13 +8,16 @@ import {
   dataUrlToBlob,
   emitFinalImages,
   getResponsesTransportMode,
+  isDataUrl,
+  isSseResponse,
+  isHttpUrl,
   mergeTaskResponseMeta,
   parseImagesFromPayload,
   readDevProxyRequestId,
   readImagesPayload,
   readImagesPayloadStream,
   sanitizeDebugValue,
-  shouldFallbackImagesStreamToJson,
+  shouldRetryNextImagesPlan,
 } from './helpers'
 import type {
   ApiDebugRequestLogEntry,
@@ -29,7 +32,7 @@ export async function callImagesApi(
 ): Promise<CallApiResult> {
   const { settings, prompt, params, inputImageDataUrls, editMaskDataUrl } = opts
   const isEdit = inputImageDataUrls.length > 0
-  const requestPlans = buildImagesRequestPlans(settings)
+  const requestPlans = buildImagesRequestPlans(settings, { isEdit })
   let lastError: unknown = null
 
   for (let planIndex = 0; planIndex < requestPlans.length; planIndex += 1) {
@@ -42,59 +45,113 @@ export async function callImagesApi(
       let actualTransport: 'json' | 'stream' = 'json'
 
       if (isEdit) {
-        const formData = new FormData()
-        formData.append('model', settings.model)
-        formData.append('prompt', prompt)
-        formData.append('size', params.size)
-        formData.append('quality', params.quality)
-        formData.append('output_format', params.output_format)
-        formData.append('moderation', params.moderation)
-        if (params.n > 1) {
-          formData.append('n', String(params.n))
-        }
-
-        if (params.output_format !== 'png' && params.output_compression != null) {
-          formData.append('output_compression', String(params.output_compression))
-        }
-        if (plan.transport === 'stream') {
-          formData.append('stream', 'true')
-          formData.append('partial_images', '1')
-        }
-
-        for (let index = 0; index < inputImageDataUrls.length; index += 1) {
-          const dataUrl = inputImageDataUrls[index]
-          const blob = await dataUrlToBlob(dataUrl)
-          const ext = blob.type.split('/')[1] || 'png'
-          formData.append('image[]', blob, `input-${index + 1}.${ext}`)
-        }
-        if (editMaskDataUrl) {
-          const maskBlob = await dataUrlToBlob(editMaskDataUrl)
-          formData.append('mask', maskBlob, 'mask.png')
-        }
-
         const requestUrl = buildRequestUrl(settings.baseUrl, 'images/edits', ctx)
-        debugLogEntry = createDebugRequestLogEntry(ctx, `images.edit.${plan.id}`, 'POST', requestUrl, {
-          model: settings.model,
-          prompt,
-          size: params.size,
-          quality: params.quality,
-          output_format: params.output_format,
-          moderation: params.moderation,
-          n: params.n > 1 ? params.n : undefined,
-          output_compression: params.output_format !== 'png' ? params.output_compression : undefined,
-          imageCount: inputImageDataUrls.length,
-          hasMask: Boolean(editMaskDataUrl),
-          stream: plan.transport === 'stream',
-          partial_images: plan.transport === 'stream' ? 1 : undefined,
-        })
+        if (plan.bodyMode === 'json') {
+          const images = inputImageDataUrls.map((value) => {
+            if (!isDataUrl(value) && !isHttpUrl(value)) {
+              throw createApiError('编辑参考图格式不受支持，请使用本地图片或公网图片 URL')
+            }
+            return { image_url: value }
+          })
 
-        response = await fetch(requestUrl, {
-          method: 'POST',
-          headers: ctx.requestHeaders,
-          cache: 'no-store',
-          body: formData,
-          signal: ctx.controller.signal,
-        })
+          const body: Record<string, unknown> = {
+            model: settings.model,
+            prompt,
+            images,
+            size: params.size,
+            quality: params.quality,
+            output_format: params.output_format,
+            moderation: params.moderation,
+          }
+
+          if (params.n > 1) {
+            body.n = params.n
+          }
+          if (params.output_format !== 'png' && params.output_compression != null) {
+            body.output_compression = params.output_compression
+          }
+          if (editMaskDataUrl) {
+            if (!isDataUrl(editMaskDataUrl) && !isHttpUrl(editMaskDataUrl)) {
+              throw createApiError('编辑蒙版格式不受支持，请使用本地图片或公网图片 URL')
+            }
+            body.mask = {
+              image_url: editMaskDataUrl,
+            }
+          }
+          if (plan.transport === 'stream') {
+            body.stream = true
+          }
+
+          debugLogEntry = createDebugRequestLogEntry(ctx, `images.edit.${plan.id}`, 'POST', requestUrl, {
+            ...body,
+            imageCount: inputImageDataUrls.length,
+            hasMask: Boolean(editMaskDataUrl),
+            bodyMode: plan.bodyMode,
+          })
+
+          response = await fetch(requestUrl, {
+            method: 'POST',
+            headers: {
+              ...ctx.requestHeaders,
+              'Content-Type': 'application/json',
+            },
+            cache: 'no-store',
+            body: JSON.stringify(body),
+            signal: ctx.controller.signal,
+          })
+        } else {
+          const formData = new FormData()
+          formData.append('model', settings.model)
+          formData.append('prompt', prompt)
+          formData.append('size', params.size)
+          formData.append('quality', params.quality)
+          formData.append('output_format', params.output_format)
+          formData.append('moderation', params.moderation)
+          if (params.n > 1) {
+            formData.append('n', String(params.n))
+          }
+
+          if (params.output_format !== 'png' && params.output_compression != null) {
+            formData.append('output_compression', String(params.output_compression))
+          }
+          if (plan.transport === 'stream') {
+            formData.append('stream', 'true')
+          }
+
+          for (let index = 0; index < inputImageDataUrls.length; index += 1) {
+            const dataUrl = inputImageDataUrls[index]
+            const blob = await dataUrlToBlob(dataUrl)
+            const ext = blob.type.split('/')[1] || 'png'
+            formData.append('image[]', blob, `input-${index + 1}.${ext}`)
+          }
+          if (editMaskDataUrl) {
+            const maskBlob = await dataUrlToBlob(editMaskDataUrl)
+            formData.append('mask', maskBlob, 'mask.png')
+          }
+
+          debugLogEntry = createDebugRequestLogEntry(ctx, `images.edit.${plan.id}`, 'POST', requestUrl, {
+            model: settings.model,
+            prompt,
+            size: params.size,
+            quality: params.quality,
+            output_format: params.output_format,
+            moderation: params.moderation,
+            n: params.n > 1 ? params.n : undefined,
+            output_compression: params.output_format !== 'png' ? params.output_compression : undefined,
+            imageCount: inputImageDataUrls.length,
+            hasMask: Boolean(editMaskDataUrl),
+            stream: plan.transport === 'stream',
+            bodyMode: plan.bodyMode,
+          })
+
+          response = await fetch(requestUrl, {
+            method: 'POST',
+            headers: ctx.requestHeaders,
+            cache: 'no-store',
+            body: formData,
+            signal: ctx.controller.signal,
+          })
+        }
       } else {
         const body: Record<string, unknown> = {
           model: settings.model,
@@ -113,7 +170,6 @@ export async function callImagesApi(
         }
         if (plan.transport === 'stream') {
           body.stream = true
-          body.partial_images = 1
         }
 
         const requestUrl = buildRequestUrl(settings.baseUrl, 'images/generations', ctx)
@@ -136,20 +192,23 @@ export async function callImagesApi(
       }
 
       const requestId = readDevProxyRequestId(response.headers)
+      const shouldReadAsStream = plan.transport === 'stream' || isSseResponse(response)
       const streamResult =
-        plan.transport === 'stream'
+        shouldReadAsStream
           ? await readImagesPayloadStream(
               response,
               ctx.mime,
               ctx.controller.signal,
-              opts.onFinalImages,
               debugLogEntry,
             )
           : null
       const payload = streamResult?.payload ?? (await readImagesPayload(response, debugLogEntry))
-      const streamedFinalImageCount = streamResult?.streamedFinalImageCount ?? 0
+      const streamedImages = streamResult?.streamedImages ?? []
       actualTransport = streamResult?.actualTransport ?? 'json'
-      const images = await parseImagesFromPayload(payload, ctx.mime, ctx.controller.signal)
+      const images =
+        actualTransport === 'stream' && streamedImages.length > 0
+          ? streamedImages
+          : await parseImagesFromPayload(payload, ctx.mime, ctx.controller.signal)
       if (!images.length) {
         if (debugLogEntry) {
           debugLogEntry.responseBody = sanitizeDebugValue(payload)
@@ -162,9 +221,7 @@ export async function callImagesApi(
         })
       }
 
-      if (streamedFinalImageCount < images.length) {
-        await emitFinalImages(opts, images.slice(streamedFinalImageCount))
-      }
+      await emitFinalImages(opts, images)
       const fallbackFromStream =
         actualTransport === 'json' &&
         requestPlans.slice(0, planIndex).some((item) => item.transport === 'stream')
@@ -182,7 +239,7 @@ export async function callImagesApi(
     } catch (error) {
       lastError = error
       const isLastPlan = planIndex === requestPlans.length - 1
-      if (isLastPlan || !shouldFallbackImagesStreamToJson(error, plan, nextPlan)) {
+      if (isLastPlan || !shouldRetryNextImagesPlan(error, plan, nextPlan)) {
         throw error
       }
     }
