@@ -247,14 +247,61 @@ export interface TaskImageProgress {
 
 // ===== IndexedDB 存储的图片 =====
 
-export interface StoredImage {
+export type StoredImageKind = 'local_blob' | 'remote_url' | 'legacy_data_url'
+export type StoredImageSource = 'upload' | 'generated'
+
+export interface StoredImageBase {
   id: string
-  /** 可直接用于显示的图片地址（data URL 或公网 http(s) URL） */
-  dataUrl: string
+  kind: StoredImageKind
   /** 图片首次存储时间（ms） */
   createdAt?: number
   /** 图片来源：用户上传 / API 生成 */
-  source?: 'upload' | 'generated'
+  source?: StoredImageSource
+  /** 本地二进制内容 hash；remote URL 记录允许为空 */
+  contentHash?: string | null
+  mimeType?: string | null
+  byteSize?: number | null
+  width?: number | null
+  height?: number | null
+}
+
+export interface StoredLocalBlobImage extends StoredImageBase {
+  kind: 'local_blob'
+  blob: Blob
+  thumbnailBlob?: Blob | null
+  thumbnailMimeType?: string | null
+  thumbnailWidth?: number | null
+  thumbnailHeight?: number | null
+  migratedFromLegacyAt?: number | null
+}
+
+export interface StoredRemoteUrlImage extends StoredImageBase {
+  kind: 'remote_url'
+  remoteUrl: string
+}
+
+export interface StoredLegacyDataUrlImage extends StoredImageBase {
+  kind: 'legacy_data_url'
+  dataUrl: string
+}
+
+export type StoredImage =
+  | StoredLocalBlobImage
+  | StoredRemoteUrlImage
+  | StoredLegacyDataUrlImage
+
+export interface ExportImageFileEntry {
+  kind?: StoredImageKind
+  path?: string
+  thumbnailPath?: string
+  url?: string
+  createdAt?: number
+  source?: StoredImageSource
+  mimeType?: string | null
+  width?: number | null
+  height?: number | null
+  byteSize?: number | null
+  contentHash?: string | null
 }
 
 // ===== API 请求体 =====
@@ -354,12 +401,7 @@ export interface ExportData {
   persistedState?: Record<string, unknown>
   tasks: TaskRecord[]
   /** imageId → 图片信息 */
-  imageFiles: Record<string, {
-    path?: string
-    url?: string
-    createdAt?: number
-    source?: 'upload' | 'generated'
-  }>
+  imageFiles: Record<string, ExportImageFileEntry>
 }
 
 export function resolveTaskProviderName(

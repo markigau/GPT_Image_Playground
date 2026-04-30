@@ -1,14 +1,31 @@
 import { zipSync, unzipSync, strFromU8, strToU8 } from 'fflate'
-import { clearImages, clearTasks as dbClearTasks, getAllImages, getAllTasks, hashDataUrl, putImage, putTask } from '../lib/db'
-import type { AppSettings, CategoryConfig, ExportData, ProviderConfig, TaskParams } from '../types'
+import {
+  clearImages,
+  clearTasks as dbClearTasks,
+  getAllImageRecords,
+  getAllTasks,
+  hashDataUrl,
+  putTask,
+  storeImageBlob,
+  storeRemoteImage,
+} from '../lib/db'
+import { buildImageThumbnail } from '../lib/imagePreview'
+import type {
+  AppSettings,
+  CategoryConfig,
+  ExportData,
+  ExportImageFileEntry,
+  ProviderConfig,
+  StoredImage,
+  TaskParams,
+} from '../types'
 import { DEFAULT_PARAMS } from '../types'
-import { clearImageCaches, setCachedImage } from './cache'
+import { clearImageCaches, setCachedImage, setCachedImageMetadata } from './cache'
 import {
   getImportedCategoriesFromExport,
   getImportedPromptLibraryFromExport,
   getImportedProvidersFromExport,
   getTaskReferencedImageIds,
-  isRemoteImageUrl,
   mergeImportedCategories,
   mergePromptLibraryItems,
   mergeImportedProviders,
@@ -17,6 +34,30 @@ import {
 import { buildPersistedAppStateSnapshot, readPersistedAppStateSnapshot } from './persistedState'
 import { useStore } from './state'
 import { repairCategoryStateFromTasks } from './taskStoreUtils'
+
+interface PreparedImportedRemoteImage {
+  id: string
+  mode: 'remote_url'
+  remoteUrl: string
+  info: ExportImageFileEntry
+}
+
+interface PreparedImportedBlobImage {
+  id: string
+  mode: 'local_blob'
+  originalBlob: Blob
+  thumbnailBlob?: Blob | null
+  info: ExportImageFileEntry
+}
+
+type PreparedImportedImage = PreparedImportedRemoteImage | PreparedImportedBlobImage
+
+const MIME_BY_EXTENSION: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+}
 
 export async function clearAllData() {
   await dbClearTasks()
@@ -48,38 +89,261 @@ export async function clearAllData() {
   showToast('所有数据已清空', 'success')
 }
 
-function dataUrlToBytes(dataUrl: string): { ext: string; bytes: Uint8Array } {
-  const match = dataUrl.match(/^data:image\/(\w+);base64,/)
-  const ext = match?.[1] ?? 'png'
-  const base64 = dataUrl.replace(/^data:[^;]+;base64,/, '')
+function dataUrlToBytes(dataUrl: string): { mimeType: string; ext: string; bytes: Uint8Array } {
+  const normalized = dataUrl.trim()
+  const headerMatch = /^data:([^;,]+);base64,/i.exec(normalized)
+  if (!headerMatch) {
+    throw new Error('只支持 base64 data URL 图片导出')
+  }
+
+  const mimeType = headerMatch[1].toLowerCase()
+  const ext = resolveExtensionFromMimeType(mimeType)
+  const base64 = normalized.slice(headerMatch[0].length)
   const binary = atob(base64)
   const bytes = new Uint8Array(binary.length)
   for (let index = 0; index < binary.length; index += 1) {
     bytes[index] = binary.charCodeAt(index)
   }
-  return { ext, bytes }
+
+  return { mimeType, ext, bytes }
 }
 
-function bytesToDataUrl(bytes: Uint8Array, filePath: string): string {
-  const ext = filePath.split('.').pop()?.toLowerCase() ?? 'png'
-  const mimeMap: Record<string, string> = {
-    png: 'image/png',
-    jpg: 'image/jpeg',
-    jpeg: 'image/jpeg',
-    webp: 'image/webp',
+async function blobToBytes(blob: Blob): Promise<Uint8Array> {
+  return new Uint8Array(await blob.arrayBuffer())
+}
+
+function resolveExtensionFromMimeType(mimeType: string | null | undefined): string {
+  if (!mimeType) {
+    return 'png'
   }
-  const mime = mimeMap[ext] ?? 'image/png'
-  let binary = ''
-  for (let index = 0; index < bytes.length; index += 1) {
-    binary += String.fromCharCode(bytes[index])
+
+  const normalizedMime = mimeType.toLowerCase()
+  const match = Object.entries(MIME_BY_EXTENSION).find(([, value]) => value === normalizedMime)
+  if (match) {
+    return match[0]
   }
-  return `data:${mime};base64,${btoa(binary)}`
+
+  const subtype = normalizedMime.split('/')[1]
+  return subtype || 'png'
+}
+
+function resolveMimeTypeFromPath(filePath: string, fallbackMimeType?: string | null): string {
+  const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
+  return MIME_BY_EXTENSION[ext] ?? fallbackMimeType ?? 'image/png'
+}
+
+function createImageArchivePath(id: string, mimeType: string | null | undefined, suffix?: string): string {
+  const ext = resolveExtensionFromMimeType(mimeType)
+  return suffix ? `images/${id}.${suffix}.${ext}` : `images/${id}.${ext}`
+}
+
+function normalizeOptionalFiniteNumber(value: unknown): number | null | undefined {
+  if (value === undefined || value === null) {
+    return value
+  }
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function normalizeOptionalSource(value: unknown): 'upload' | 'generated' | undefined {
+  if (value === 'upload' || value === 'generated') {
+    return value
+  }
+  return undefined
+}
+
+function normalizeOptionalString(value: unknown): string | null | undefined {
+  if (value === undefined || value === null) {
+    return value
+  }
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function isRemoteImageUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value)
+}
+
+async function exportImageRecord(
+  image: StoredImage,
+  createdAt: number,
+  zipFiles: Record<string, Uint8Array | [Uint8Array, { mtime: Date }]>,
+): Promise<ExportImageFileEntry> {
+  if (image.kind === 'remote_url') {
+    return {
+      kind: 'remote_url',
+      url: image.remoteUrl,
+      createdAt,
+      source: image.source,
+      mimeType: image.mimeType ?? null,
+      width: image.width ?? null,
+      height: image.height ?? null,
+      byteSize: image.byteSize ?? null,
+      contentHash: image.contentHash ?? null,
+    }
+  }
+
+  if (image.kind === 'local_blob') {
+    const mimeType = (image.mimeType ?? image.blob.type) || 'image/png'
+    const path = createImageArchivePath(image.id, mimeType)
+    zipFiles[path] = [await blobToBytes(image.blob), { mtime: new Date(createdAt) }]
+
+    const thumbnailMimeType = image.thumbnailMimeType ?? image.thumbnailBlob?.type ?? null
+    const thumbnailPath = image.thumbnailBlob
+      ? createImageArchivePath(image.id, thumbnailMimeType, 'thumb')
+      : undefined
+    if (thumbnailPath && image.thumbnailBlob) {
+      zipFiles[thumbnailPath] = [await blobToBytes(image.thumbnailBlob), { mtime: new Date(createdAt) }]
+    }
+
+    return {
+      kind: 'local_blob',
+      path,
+      thumbnailPath,
+      createdAt,
+      source: image.source,
+      mimeType,
+      width: image.width ?? null,
+      height: image.height ?? null,
+      byteSize: image.byteSize ?? image.blob.size,
+      contentHash: image.contentHash ?? null,
+    }
+  }
+
+  const { mimeType, bytes } = dataUrlToBytes(image.dataUrl)
+  const path = createImageArchivePath(image.id, image.mimeType ?? mimeType)
+  zipFiles[path] = [bytes, { mtime: new Date(createdAt) }]
+
+  return {
+    kind: 'legacy_data_url',
+    path,
+    createdAt,
+    source: image.source,
+    mimeType: image.mimeType ?? mimeType,
+    width: image.width ?? null,
+    height: image.height ?? null,
+    byteSize: image.byteSize ?? bytes.byteLength,
+    contentHash: image.contentHash ?? null,
+  }
+}
+
+async function prepareImportedImage(
+  id: string,
+  info: ExportImageFileEntry,
+  unzipped: Record<string, Uint8Array>,
+): Promise<PreparedImportedImage> {
+  const normalizedUrl = normalizeOptionalString(info.url)
+  if (normalizedUrl) {
+    if (!isRemoteImageUrl(normalizedUrl)) {
+      throw new Error(`导入图片 ${id} 的 url 不是合法的 http(s) 地址`)
+    }
+
+    return {
+      id,
+      mode: 'remote_url',
+      remoteUrl: normalizedUrl,
+      info,
+    }
+  }
+
+  const normalizedPath = normalizeOptionalString(info.path)
+  if (!normalizedPath) {
+    throw new Error(`导入图片 ${id} 缺少 path/url，无法恢复`)
+  }
+
+  const originalBytes = unzipped[normalizedPath]
+  if (!originalBytes) {
+    throw new Error(`导入包缺少图片文件：${normalizedPath}`)
+  }
+
+  const originalMimeType = resolveMimeTypeFromPath(normalizedPath, normalizeOptionalString(info.mimeType) ?? undefined)
+  const originalBlob = new Blob([originalBytes], { type: originalMimeType })
+
+  const normalizedThumbnailPath = normalizeOptionalString(info.thumbnailPath)
+  let thumbnailBlob: Blob | null | undefined
+  if (normalizedThumbnailPath) {
+    const thumbnailBytes = unzipped[normalizedThumbnailPath]
+    if (!thumbnailBytes) {
+      throw new Error(`导入包缺少缩略图文件：${normalizedThumbnailPath}`)
+    }
+
+    thumbnailBlob = new Blob([thumbnailBytes], {
+      type: resolveMimeTypeFromPath(normalizedThumbnailPath),
+    })
+  }
+
+  return {
+    id,
+    mode: 'local_blob',
+    originalBlob,
+    thumbnailBlob,
+    info,
+  }
+}
+
+async function writeImportedImage(image: PreparedImportedImage): Promise<string> {
+  if (image.mode === 'remote_url') {
+    const storedId = await storeRemoteImage(image.remoteUrl, {
+      id: image.id,
+      createdAt: normalizeOptionalFiniteNumber(image.info.createdAt) ?? undefined,
+      source: normalizeOptionalSource(image.info.source),
+      mimeType: normalizeOptionalString(image.info.mimeType),
+      byteSize: normalizeOptionalFiniteNumber(image.info.byteSize) ?? null,
+      width: normalizeOptionalFiniteNumber(image.info.width) ?? null,
+      height: normalizeOptionalFiniteNumber(image.info.height) ?? null,
+      contentHash: normalizeOptionalString(image.info.contentHash),
+    })
+    setCachedImage(storedId, image.remoteUrl)
+    return storedId
+  }
+
+  let thumbnailBlob = image.thumbnailBlob ?? null
+  let width = normalizeOptionalFiniteNumber(image.info.width) ?? null
+  let height = normalizeOptionalFiniteNumber(image.info.height) ?? null
+  let thumbnailWidth: number | null = null
+  let thumbnailHeight: number | null = null
+
+  if (!thumbnailBlob || !width || !height) {
+    try {
+      const generatedThumbnail = await buildImageThumbnail(image.originalBlob)
+      thumbnailBlob ??= generatedThumbnail.thumbnailBlob
+      width ??= generatedThumbnail.width
+      height ??= generatedThumbnail.height
+      thumbnailWidth = generatedThumbnail.thumbnailWidth
+      thumbnailHeight = generatedThumbnail.thumbnailHeight
+    } catch (error) {
+      console.error(`导入图片 ${image.id} 时生成缩略图失败，将继续导入原图。`, error)
+    }
+  }
+
+  const storedId = await storeImageBlob(image.originalBlob, {
+    id: image.id,
+    createdAt: normalizeOptionalFiniteNumber(image.info.createdAt) ?? undefined,
+    source: normalizeOptionalSource(image.info.source),
+    mimeType: (normalizeOptionalString(image.info.mimeType) ?? image.originalBlob.type) || null,
+    byteSize: normalizeOptionalFiniteNumber(image.info.byteSize) ?? image.originalBlob.size,
+    width,
+    height,
+    contentHash: normalizeOptionalString(image.info.contentHash),
+    thumbnailBlob,
+    thumbnailMimeType: thumbnailBlob?.type || null,
+    thumbnailWidth,
+    thumbnailHeight,
+  })
+
+  setCachedImage(storedId, image.originalBlob, 'original')
+  if (thumbnailBlob) {
+    setCachedImage(storedId, thumbnailBlob, 'thumbnail')
+  }
+  if (width && height) {
+    setCachedImageMetadata(storedId, { width, height })
+  }
+
+  return storedId
 }
 
 export async function exportData() {
   try {
     const tasks = await getAllTasks()
-    const images = await getAllImages()
+    const images = await getAllImageRecords()
     const appStateSnapshot = buildPersistedAppStateSnapshot(useStore.getState())
     const exportedAt = Date.now()
     const imageCreatedAtFallback = new Map<string, number>()
@@ -98,19 +362,11 @@ export async function exportData() {
 
     for (const image of images) {
       const createdAt = image.createdAt ?? imageCreatedAtFallback.get(image.id) ?? exportedAt
-      if (isRemoteImageUrl(image.dataUrl)) {
-        imageFiles[image.id] = { url: image.dataUrl, createdAt, source: image.source }
-        continue
-      }
-
-      const { ext, bytes } = dataUrlToBytes(image.dataUrl)
-      const path = `images/${image.id}.${ext}`
-      imageFiles[image.id] = { path, createdAt, source: image.source }
-      zipFiles[path] = [bytes, { mtime: new Date(createdAt) }]
+      imageFiles[image.id] = await exportImageRecord(image, createdAt, zipFiles)
     }
 
     const manifest: ExportData = {
-      version: 6,
+      version: 7,
       exportedAt: new Date(exportedAt).toISOString(),
       settings: appStateSnapshot.settings as AppSettings,
       providers: appStateSnapshot.providers as ProviderConfig[] | undefined,
@@ -198,29 +454,23 @@ export async function importData(file: File) {
       }
     }
 
+    for (const referencedImageId of referencedImageIds) {
+      if (!(referencedImageId in data.imageFiles)) {
+        throw new Error(`导入包缺少被任务引用的图片条目：${referencedImageId}`)
+      }
+    }
+
+    const preparedImages: PreparedImportedImage[] = []
     for (const [id, info] of Object.entries(data.imageFiles)) {
       if (!referencedImageIds.has(id)) {
         continue
       }
 
-      if (info.url) {
-        await putImage({ id, dataUrl: info.url, createdAt: info.createdAt, source: info.source })
-        setCachedImage(id, info.url)
-        continue
-      }
+      preparedImages.push(await prepareImportedImage(id, info, unzipped))
+    }
 
-      if (!info.path) {
-        continue
-      }
-
-      const bytes = unzipped[info.path]
-      if (!bytes) {
-        continue
-      }
-
-      const dataUrl = bytesToDataUrl(bytes, info.path)
-      await putImage({ id, dataUrl, createdAt: info.createdAt, source: info.source })
-      setCachedImage(id, dataUrl)
+    for (const preparedImage of preparedImages) {
+      await writeImportedImage(preparedImage)
     }
 
     for (const task of tasksToImport) {
@@ -236,6 +486,9 @@ export async function importData(file: File) {
     repairCategoryStateFromTasks(tasks)
 
     const summaryParts = [`已导入 ${tasksToImport.length} 条记录`]
+    if (data.version === 6) {
+      summaryParts.push('已兼容导入 v6 备份')
+    }
     if (skippedTaskCount > 0) {
       summaryParts.push(`跳过 ${skippedTaskCount} 条重复记录`)
     }

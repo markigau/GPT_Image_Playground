@@ -1,7 +1,7 @@
 import { deleteImage, deleteTask as dbDeleteTask, putTask } from '../lib/db'
 import type { CategoryConfig, InputImage, TaskRecord } from '../types'
 import { UNCATEGORIZED_CATEGORY_FILTER, isTaskInRecycleBin } from '../types'
-import { deleteCachedImage, ensureImageCached } from './cache'
+import { deleteCachedImage, ensureImageDataUrl } from './cache'
 import {
   createCategoryConfig,
   ensureCategoryNameAvailable,
@@ -14,11 +14,11 @@ import { useStore } from './state'
 import { clearTaskUiState, collectReferencedImageIds } from './taskStoreUtils'
 
 async function buildInputImagesFromTask(task: TaskRecord): Promise<InputImage[]> {
-  const maskDataUrl = task.editMaskImageId ? await ensureImageCached(task.editMaskImageId) : null
+  const maskDataUrl = task.editMaskImageId ? await ensureImageDataUrl(task.editMaskImageId) : null
   const images: InputImage[] = []
 
   for (const imageId of task.inputImageIds) {
-    const dataUrl = await ensureImageCached(imageId)
+    const dataUrl = await ensureImageDataUrl(imageId)
     if (!dataUrl) {
       continue
     }

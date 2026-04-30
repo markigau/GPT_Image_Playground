@@ -1,4 +1,4 @@
-export { ensureImageCached, getCachedImage } from './cache'
+export { ensureImageCached, ensureImageDataUrl, getCachedImage } from './cache'
 export { createCategory, deleteCategory, moveTaskToCategory, moveTasksToCategory, purgeTask, purgeTasks, removeTask, removeTasks, renameCategory, restoreTask, restoreTasks, reuseConfig, setTasksFavorite, toggleTaskFavorite } from './collectionActions'
 export { addImageFromFile, addImageFromUrl, clearAllData, exportData, importData, normalizeImageUrl } from './dataTransfer'
 export { applyImageEditToInput, clearInputImageEdit, closeImageEditor, editOutputs, reopenImageEditorFromInputImage } from './imageEditActions'
