@@ -1,23 +1,32 @@
 import { useStore } from './state'
 
 function normalizeImageIdList(imageId: string, imageIds?: string[]): string[] {
-  const merged = [
-    imageId,
-    ...(imageIds ?? []),
-  ]
-
-  const deduped = Array.from(
+  const normalizedImageId = typeof imageId === 'string' ? imageId.trim() : ''
+  const normalizedList = Array.from(
     new Set(
-      merged.filter((item): item is string => typeof item === 'string' && Boolean(item.trim())),
+      (imageIds ?? [])
+        .map((item) => (typeof item === 'string' ? item.trim() : ''))
+        .filter(Boolean),
     ),
   )
 
-  return deduped
+  if (!normalizedImageId) {
+    return normalizedList
+  }
+
+  if (normalizedList.includes(normalizedImageId)) {
+    return normalizedList
+  }
+
+  return [normalizedImageId, ...normalizedList]
 }
 
 export function openLightbox(imageId: string, imageIds?: string[]) {
   const normalizedList = normalizeImageIdList(imageId, imageIds)
-  const normalizedId = normalizedList.find((item) => item === imageId) ?? normalizedList[0] ?? null
+  const normalizedImageId = typeof imageId === 'string' ? imageId.trim() : ''
+  const normalizedId = normalizedList.includes(normalizedImageId)
+    ? normalizedImageId
+    : normalizedList[0] ?? null
 
   useStore.getState().setLightboxImageId(normalizedId, normalizedList)
 }

@@ -32,10 +32,13 @@ export function useImageEditState(imageEditSession: ImageEditSession | null, act
   const currentImageNumber = totalImageCount ? currentImageIndex + 1 : 1
   const hasMultipleImages = totalImageCount > 1
   const currentImageId = availableImageIds[currentImageIndex] ?? imageEditSession?.sourceImageId ?? ''
-  const { url: loadedImageSrc } = useImageAssetView(currentImageId)
+  const isCurrentSourceImage = Boolean(
+    imageEditSession && currentImageId === imageEditSession.sourceImageId,
+  )
+  const { url: loadedImageSrc } = useImageAssetView(isCurrentSourceImage ? null : currentImageId)
   const displayImageSrc =
     currentImageSrc ||
-    (imageEditSession && currentImageId === imageEditSession.sourceImageId
+    (imageEditSession && isCurrentSourceImage
       ? imageEditSession.sourceImageDataUrl
       : '')
 
@@ -70,7 +73,6 @@ export function useImageEditState(imageEditSession: ImageEditSession | null, act
       return
     }
 
-    let cancelled = false
     resetImageViewport()
     setSelection(
       currentImageId === imageEditSession.sourceImageId
@@ -80,16 +82,10 @@ export function useImageEditState(imageEditSession: ImageEditSession | null, act
 
     if (currentImageId === imageEditSession.sourceImageId) {
       setCurrentImageSrc(imageEditSession.sourceImageDataUrl)
-      return () => {
-        cancelled = true
-      }
+      return
     }
 
     setCurrentImageSrc(loadedImageSrc)
-
-    return () => {
-      cancelled = true
-    }
   }, [currentImageId, imageEditSession, loadedImageSrc, resetImageViewport])
 
   const updateDisplayRect = useCallback(() => {
@@ -97,13 +93,24 @@ export function useImageEditState(imageEditSession: ImageEditSession | null, act
     const image = imageRef.current
     if (!panel || !image) return
 
-    const panelRect = panel.getBoundingClientRect()
-    const imageRect = image.getBoundingClientRect()
-    setDisplayRect({
-      left: imageRect.left - panelRect.left,
-      top: imageRect.top - panelRect.top,
-      width: imageRect.width,
-      height: imageRect.height,
+    const nextRect = {
+      left: image.offsetLeft,
+      top: image.offsetTop,
+      width: image.offsetWidth,
+      height: image.offsetHeight,
+    }
+
+    setDisplayRect((previous) => {
+      if (
+        previous.left === nextRect.left &&
+        previous.top === nextRect.top &&
+        previous.width === nextRect.width &&
+        previous.height === nextRect.height
+      ) {
+        return previous
+      }
+
+      return nextRect
     })
   }, [])
 
@@ -115,16 +122,42 @@ export function useImageEditState(imageEditSession: ImageEditSession | null, act
     return () => window.removeEventListener('resize', updateDisplayRect)
   }, [imageEditSession, naturalSize, updateDisplayRect])
 
-  const handleImageLoad = useCallback(() => {
+  const measureLoadedImage = useCallback(() => {
     const image = imageRef.current
-    if (!image) return
+    if (!image || !image.naturalWidth || !image.naturalHeight) return
 
-    setNaturalSize({
-      width: image.naturalWidth,
-      height: image.naturalHeight,
+    setNaturalSize((previous) => {
+      if (
+        previous &&
+        previous.width === image.naturalWidth &&
+        previous.height === image.naturalHeight
+      ) {
+        return previous
+      }
+
+      return {
+        width: image.naturalWidth,
+        height: image.naturalHeight,
+      }
     })
     updateDisplayRect()
   }, [updateDisplayRect])
+
+  useEffect(() => {
+    if (!displayImageSrc || (naturalSize && displayRect.width > 0 && displayRect.height > 0)) {
+      return
+    }
+
+    const image = imageRef.current
+    if (!image?.complete) return
+
+    const frameId = window.requestAnimationFrame(measureLoadedImage)
+    return () => window.cancelAnimationFrame(frameId)
+  }, [displayImageSrc, displayRect.height, displayRect.width, measureLoadedImage, naturalSize])
+
+  const handleImageLoad = useCallback(() => {
+    measureLoadedImage()
+  }, [measureLoadedImage])
 
   const switchImage = useCallback(
     (direction: -1 | 1) => {
