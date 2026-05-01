@@ -107,11 +107,7 @@ export default function TaskGridBody({
     <>
       <div className="flex items-center justify-between text-xs text-gray-400 dark:text-gray-500">
         <span>
-          当前渲染{' '}
-          {virtualGrid.renderedTasks.length > 0
-            ? `${virtualGrid.startIndex + 1}-${virtualGrid.endIndex}`
-            : '0'}{' '}
-          / {filteredTaskCount} 条
+          {taskView === 'trash' ? '回收站' : '画廊'} {filteredTaskCount} 条
         </span>
       </div>
 

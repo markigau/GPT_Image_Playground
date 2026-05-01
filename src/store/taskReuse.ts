@@ -1,5 +1,5 @@
 import type { InputImage, TaskRecord } from '../types'
-import { ensureImageAssetDataUrl } from './imageAssets'
+import { getImageView } from './imageAssets'
 import { resolveTaskKind } from './taskRecords'
 
 function resolveReusableTaskImageIds(task: TaskRecord): string[] {
@@ -59,12 +59,12 @@ function buildReusableInputImage(
 }
 
 export async function buildReusableInputImagesFromTask(task: TaskRecord): Promise<InputImage[]> {
-  const maskDataUrl = task.editMaskImageId ? await ensureImageAssetDataUrl(task.editMaskImageId) : null
+  const maskDataUrl = task.editMaskImageId ? await getImageView(task.editMaskImageId).getRawDataUrl() : null
   const sourceImageIds = resolveReusableTaskImageIds(task)
   const inputImages: InputImage[] = []
 
   for (const imageId of sourceImageIds) {
-    const dataUrl = await ensureImageAssetDataUrl(imageId)
+    const dataUrl = await getImageView(imageId).getRawDataUrl()
     if (!dataUrl) {
       continue
     }

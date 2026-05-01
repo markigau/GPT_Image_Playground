@@ -1,5 +1,5 @@
 import { deleteTask as dbDeleteTask } from '../lib/db'
-import { deleteImageAsset } from './imageAssets'
+import { removeImage } from './imageAssets'
 import { useStore } from './state'
 import { clearPurgedTaskUiState } from './taskStoreUtils'
 
@@ -10,7 +10,7 @@ export interface ApplyTaskPurgePlanInput {
 
 async function deletePlannedImages(imageIds: string[]) {
   for (const imageId of imageIds) {
-    await deleteImageAsset(imageId)
+    await removeImage(imageId)
   }
 }
 

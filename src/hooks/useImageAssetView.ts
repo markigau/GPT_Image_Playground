@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ImageAssetView, ImageAssetViewOptions } from '../store/imageAssets'
-import { ensureImageAssetView, getCachedImageAssetView } from '../store'
+import { getImageView } from '../store'
 
 export interface UseImageAssetViewResult {
   imageId: string
@@ -43,7 +43,10 @@ export function useImageAssetView(
       includeMetadata,
       inferMetadataFromUrl,
     }
-    const cachedView = getCachedImageAssetView(normalizedImageId, viewOptions)
+    const handle = getImageView(normalizedImageId, variant)
+    const cachedView = handle.displayUrl
+      ? { url: handle.displayUrl, metadata: handle.metadata } as ImageAssetView
+      : null
     if (cachedView && (!metadataRequested || cachedView.metadata)) {
       setResolvedImageId(normalizedImageId)
       setView(cachedView)
@@ -61,7 +64,7 @@ export function useImageAssetView(
     }
     setStatus('loading')
 
-    void ensureImageAssetView(normalizedImageId, viewOptions)
+    void getImageView(normalizedImageId, variant).reload().then(h => h.displayUrl ? { url: h.displayUrl, metadata: h.metadata } as ImageAssetView : null)
       .then((nextView) => {
         if (cancelled) {
           return

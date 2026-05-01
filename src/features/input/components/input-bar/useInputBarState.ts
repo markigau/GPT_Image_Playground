@@ -125,6 +125,7 @@ export interface InputBarViewModel {
 }
 
 export function useInputBarState(): InputBarViewModel {
+  // ===== Store selectors =====
   const prompt = useStore((state) => state.prompt)
   const setPrompt = useStore((state) => state.setPrompt)
   const inputImages = useStore((state) => state.inputImages)
@@ -141,6 +142,7 @@ export function useInputBarState(): InputBarViewModel {
   const setShowSettings = useStore((state) => state.setShowSettings)
   const setConfirmDialog = useStore((state) => state.setConfirmDialog)
 
+  // ===== Local state =====
   const [mobileAdvancedParamsVisible, setMobileAdvancedParamsVisible] = useState(false)
   const [showSizePicker, setShowSizePicker] = useState(false)
   const [outputCompressionInput, setOutputCompressionInput] = useState(
@@ -149,6 +151,7 @@ export function useInputBarState(): InputBarViewModel {
   const [nInput, setNInput] = useState(String(params.n))
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
 
+  // ===== Derived values =====
   const isMobile = useIsMobile()
   const providerOptions = providers.map((provider) => ({
     label: provider.name,
@@ -185,6 +188,7 @@ export function useInputBarState(): InputBarViewModel {
     setNInput(String(params.n))
   }, [params.n])
 
+  // ===== Callbacks =====
   const commitOutputCompression = useCallback(() => {
     if (outputCompressionInput.trim() === '') {
       setOutputCompressionInput('')
@@ -225,6 +229,7 @@ export function useInputBarState(): InputBarViewModel {
     setMobileDrawerOpen(false)
   }, [])
 
+  // ===== Sub-ViewModel: PromptSection =====
   const promptSectionProps = usePromptInputController({
     prompt,
     normalizedPrompt,
@@ -235,6 +240,7 @@ export function useInputBarState(): InputBarViewModel {
     onPromptChange: setPrompt,
   })
 
+  // ===== Sub-ViewModel: ReferenceImagesSection =====
   const { fileInputRef, isDragging, onFileUpload, panelBindings, referenceImagesSectionProps } =
     useInputImageControls({
       isMobile,
@@ -249,6 +255,7 @@ export function useInputBarState(): InputBarViewModel {
     onRequestClearAllImages: requestClearInputImages,
   })
 
+  // ===== Sub-ViewModel: ParamsSection =====
   const paramsSectionProps: ParamsSectionViewModel = {
     isMobile,
     mobileAdvancedParamsVisible,
@@ -269,6 +276,7 @@ export function useInputBarState(): InputBarViewModel {
     onCommitN: commitN,
   }
 
+  // ===== Sub-ViewModel: SubmitSection =====
   const submitSectionProps: SubmitSectionViewModel = {
     generationTargetLabel,
     hasApiKey: Boolean(settings.apiKey),
@@ -278,6 +286,7 @@ export function useInputBarState(): InputBarViewModel {
     onOpenSettings: () => setShowSettings(true),
   }
 
+  // ===== Assemble InputBarViewModel =====
   return {
     isMobile,
     normalizedPrompt,

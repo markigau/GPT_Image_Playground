@@ -25,10 +25,8 @@ import {
 } from './domain'
 import {
   clearImageAssets,
-  listImageAssetRecords,
-  saveImageAssetBlob,
-  saveRemoteImageAsset,
-  stageImageAssetReference,
+  listImages,
+  storeImage,
 } from './imageAssets'
 import { buildPersistedAppStateSnapshot, readPersistedAppStateSnapshot } from './persistedState'
 import { useStore } from './state'
@@ -268,7 +266,7 @@ async function prepareImportedImage(
 
 async function writeImportedImage(image: PreparedImportedImage): Promise<string> {
   if (image.mode === 'remote_url') {
-    return saveRemoteImageAsset(image.remoteUrl, {
+    return storeImage(image.remoteUrl, {
       id: image.id,
       createdAt: normalizeOptionalFiniteNumber(image.info.createdAt) ?? undefined,
       source: normalizeOptionalSource(image.info.source),
@@ -286,7 +284,7 @@ async function writeImportedImage(image: PreparedImportedImage): Promise<string>
   const thumbnailWidth: number | null = null
   const thumbnailHeight: number | null = null
 
-  return saveImageAssetBlob(image.originalBlob, {
+  return storeImage(image.originalBlob, {
     id: image.id,
     createdAt: normalizeOptionalFiniteNumber(image.info.createdAt) ?? undefined,
     source: normalizeOptionalSource(image.info.source),
@@ -305,7 +303,7 @@ async function writeImportedImage(image: PreparedImportedImage): Promise<string>
 export async function exportData() {
   try {
     const tasks = await getAllTasks()
-    const images = await listImageAssetRecords()
+    const images = await listImages()
     const appStateSnapshot = buildPersistedAppStateSnapshot(useStore.getState())
     const exportedAt = Date.now()
     const imageCreatedAtFallback = new Map<string, number>()
@@ -477,7 +475,7 @@ export async function addImageFromFile(file: File): Promise<void> {
   }
 
   const dataUrl = await fileToDataUrl(file)
-  const id = await stageImageAssetReference(dataUrl)
+  const id = await storeImage(dataUrl, { stageOnly: true })
   useStore.getState().addInputImage({ id, dataUrl })
 }
 
@@ -503,7 +501,7 @@ export function normalizeImageUrl(url: string): string {
 
 export async function addImageFromUrl(url: string): Promise<void> {
   const normalizedUrl = normalizeImageUrl(url)
-  const id = await stageImageAssetReference(normalizedUrl)
+  const id = await storeImage(normalizedUrl, { stageOnly: true })
   useStore.getState().addInputImage({ id, dataUrl: normalizedUrl })
 }
 

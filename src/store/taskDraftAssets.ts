@@ -1,5 +1,5 @@
 import type { InputImage } from '../types'
-import { saveImageAssetReference } from './imageAssets'
+import { storeImage } from './imageAssets'
 import type { StagedTaskDraftAssets } from './taskDraftBuilder'
 
 export async function stageTaskDraftAssets(
@@ -11,12 +11,12 @@ export async function stageTaskDraftAssets(
   }
 
   for (const image of inputImages) {
-    await saveImageAssetReference(image.dataUrl, { id: image.id, source: 'upload' })
+    await storeImage(image.dataUrl, { id: image.id, source: 'upload' })
   }
 
   const maskedInput = maskedInputs[0] ?? null
   const editMaskImageId = maskedInput?.maskDataUrl
-    ? await saveImageAssetReference(maskedInput.maskDataUrl, { source: 'upload' })
+    ? await storeImage(maskedInput.maskDataUrl, { source: 'upload' })
     : null
 
   return {

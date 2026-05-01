@@ -6,7 +6,7 @@ import {
   UNCATEGORIZED_CATEGORY_FILTER,
 } from '../types'
 import { findCategoryById } from './domain'
-import { saveImageAssetBlob } from './imageAssets'
+import { storeImage } from './imageAssets'
 import { useStore } from './state'
 import { createSingleImageTaskRecord } from './taskRecords'
 
@@ -52,7 +52,7 @@ export async function createSingleImageTasksFromFiles(files: File[] | FileList):
 
   for (const file of acceptedFiles) {
     try {
-      const imageId = await saveImageAssetBlob(file, {
+      const imageId = await storeImage(file, {
         source: 'upload',
         mimeType: file.type || null,
         byteSize: file.size,

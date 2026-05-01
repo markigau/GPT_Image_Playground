@@ -8,8 +8,8 @@ import {
 import type { TaskApiOutputImageAsset } from './taskApiRequest'
 import { callTaskImageApi } from './taskApiRequest'
 import type { StoreApiError } from './contracts'
-import { isRecord } from './domain'
-import { evictImageAsset, saveImageAssetBlob } from './imageAssets'
+import { isRecord } from '../lib/guards'
+import { evictImage, storeImage } from './imageAssets'
 import { useStore } from './state'
 import {
   abortTaskRun,
@@ -85,7 +85,7 @@ export async function executeTask(taskId: string, requestSettings: AppSettings) 
 
       for (const image of images) {
         throwIfTaskAbortRequested(taskId)
-        const imageId = await saveImageAssetBlob(image.blob, {
+        const imageId = await storeImage(image.blob, {
           source: 'generated',
           mimeType: image.mimeType || image.blob.type || null,
         })
@@ -135,7 +135,7 @@ export async function executeTask(taskId: string, requestSettings: AppSettings) 
   } finally {
     clearTaskAbortState(taskId)
     for (const imageId of task.inputImageIds) {
-      evictImageAsset(imageId)
+      evictImage(imageId)
     }
   }
 }

@@ -1,7 +1,7 @@
 import { callImageApi } from '../lib/api'
 import type { ApiInputImage, ApiImageAsset, CallApiResult } from '../lib/api'
 import type { AppSettings, TaskRecord } from '../types'
-import { ensureImageAssetDataUrl } from './imageAssets'
+import { getImageView } from './imageAssets'
 
 export type TaskApiOutputImageAsset = ApiImageAsset
 
@@ -19,7 +19,7 @@ async function loadTaskInputImages(
 
   for (const imageId of task.inputImageIds) {
     throwIfAborted?.()
-    const dataUrl = await ensureImageAssetDataUrl(imageId)
+    const dataUrl = await getImageView(imageId).getRawDataUrl()
     throwIfAborted?.()
     if (!dataUrl) {
       continue
@@ -43,7 +43,7 @@ async function loadTaskEditMaskDataUrl(
   }
 
   throwIfAborted?.()
-  const editMaskDataUrl = await ensureImageAssetDataUrl(task.editMaskImageId)
+  const editMaskDataUrl = await getImageView(task.editMaskImageId).getRawDataUrl()
   throwIfAborted?.()
   if (!editMaskDataUrl) {
     throw new Error('局部编辑蒙版缺失，请重新选择编辑区域后再试')

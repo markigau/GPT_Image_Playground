@@ -316,3 +316,102 @@ export async function clearImageAssets(): Promise<void> {
 export async function listImageAssetRecords(): Promise<StoredImage[]> {
   return getAllImageRecords()
 }
+
+// ============================================================
+// 新接口：统一图片存储与读取
+// ============================================================
+
+/** 图片句柄 */
+export interface ImageHandle {
+  /** 同步可用的显示地址 */
+  displayUrl: string | undefined
+  /** 异步重新加载 */
+  reload(): Promise<ImageHandle>
+  /** 同步的元信息 */
+  metadata: ImageAssetMetadata | null
+  /** 获取缩略图句柄 */
+  getThumbnail(): ImageHandle
+  /** 获取原始数据地址 */
+  getRawDataUrl(): Promise<string | undefined>
+}
+
+export interface StoreImageOptions {
+  id?: string
+  source?: StoredImageSource
+  createdAt?: number
+  contentHash?: string | null
+  mimeType?: string | null
+  byteSize?: number | null
+  width?: number | null
+  height?: number | null
+  replaceExisting?: boolean
+  stageOnly?: boolean
+  thumbnailBlob?: Blob | null
+  thumbnailMimeType?: string | null
+  thumbnailWidth?: number | null
+  thumbnailHeight?: number | null
+}
+
+export async function storeImage(
+  input: Blob | string,
+  options: StoreImageOptions = {},
+): Promise<string> {
+  const { stageOnly, thumbnailBlob, thumbnailMimeType, thumbnailWidth, thumbnailHeight, ...baseOptions } = options
+  if (input instanceof Blob) {
+    return saveImageAssetBlob(input, { ...baseOptions, thumbnailBlob, thumbnailMimeType, thumbnailWidth, thumbnailHeight })
+  }
+  if (stageOnly) {
+    return stageImageAssetReference(input)
+  }
+  if (isRemoteImageUrl(input)) {
+    return saveRemoteImageAsset(input, baseOptions)
+  }
+  return saveImageAssetReference(input, { id: baseOptions.id, source: baseOptions.source })
+}
+
+function makeImageHandle(
+  imageId: string,
+  variant: ImageAssetVariant,
+  existingUrl?: string,
+  existingMetadata?: ImageAssetMetadata | null,
+): ImageHandle {
+  return {
+    displayUrl: existingUrl ?? getCachedImage(imageId, variant),
+    metadata: existingMetadata ?? getCachedImageMetadata(imageId) ?? null,
+    async reload(): Promise<ImageHandle> {
+      const url = await ensureImageCached(imageId, variant)
+      if (!url) return makeImageHandle(imageId, variant)
+      const metadata = await resolveImageAssetViewMetadata(imageId, url, variant, {
+        includeMetadata: true, inferMetadataFromUrl: true, variant,
+      })
+      return makeImageHandle(imageId, variant, url, metadata)
+    },
+    getThumbnail(): ImageHandle {
+      return makeImageHandle(imageId, "thumbnail")
+    },
+    async getRawDataUrl(): Promise<string | undefined> {
+      return ensureImageDataUrl(imageId)
+    },
+  }
+}
+
+export function getImageView(
+  imageId: string,
+  variant: ImageAssetVariant = "original",
+): ImageHandle {
+  const cachedUrl = getCachedImage(imageId, variant)
+  const cachedMeta = getCachedImageMetadata(imageId)
+  return makeImageHandle(imageId, variant, cachedUrl, cachedMeta)
+}
+
+export async function removeImage(imageId: string): Promise<void> {
+  return deleteImageAsset(imageId)
+}
+
+export function evictImage(imageId: string): void {
+  evictImageAsset(imageId)
+}
+
+export async function listImages(): Promise<StoredImage[]> {
+  return listImageAssetRecords()
+}

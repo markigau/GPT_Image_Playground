@@ -19,6 +19,12 @@ export default function ViewToggleBar({
   onSetGalleryDisplayMode,
 }: ViewToggleBarProps) {
   const isGalleryActive = taskView === 'gallery'
+  const galleryCountClassName = isGalleryActive
+    ? 'bg-white/18 text-white'
+    : 'bg-gray-100 px-1.5 py-0.5 text-[10px] leading-none text-gray-500 dark:bg-white/[0.05] dark:text-gray-400'
+  const trashCountClassName = !isGalleryActive
+    ? 'bg-white/18 text-white'
+    : 'bg-gray-100 px-1.5 py-0.5 text-[10px] leading-none text-gray-500 dark:bg-white/[0.05] dark:text-gray-400'
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
@@ -33,11 +39,9 @@ export default function ViewToggleBar({
           }`}
         >
           <span>画廊</span>
-          {!isGalleryActive && (
-            <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] leading-none text-gray-500 dark:bg-white/[0.05] dark:text-gray-400">
-              {activeGalleryCount}
-            </span>
-          )}
+          <span className={`rounded-full px-1.5 py-0.5 text-[10px] leading-none ${galleryCountClassName}`}>
+            {activeGalleryCount}
+          </span>
         </button>
 
         <button
@@ -50,11 +54,9 @@ export default function ViewToggleBar({
           }`}
         >
           <span>回收站</span>
-          {isGalleryActive && recycleBinCount > 0 && (
-            <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] leading-none text-gray-500 dark:bg-white/[0.05] dark:text-gray-400">
-              {recycleBinCount}
-            </span>
-          )}
+          <span className={`rounded-full px-1.5 py-0.5 text-[10px] leading-none ${trashCountClassName}`}>
+            {recycleBinCount}
+          </span>
         </button>
       </div>
 

@@ -1,6 +1,6 @@
 import type { ImageEditSelection, ImageEditSession, InputImage, TaskRecord } from '../types'
 import { writeImageEditDraft } from './taskDraft'
-import { ensureImageAssetDataUrl } from './imageAssets'
+import { getImageView } from './imageAssets'
 import { submitTask } from './runtime'
 import { useStore } from './state'
 
@@ -14,7 +14,7 @@ export async function editOutputs(task: TaskRecord, preferredImageId?: string) {
     return
   }
 
-  const sourceImageDataUrl = await ensureImageAssetDataUrl(sourceImageId)
+  const sourceImageDataUrl = await getImageView(sourceImageId).getRawDataUrl()
   if (!sourceImageDataUrl) {
     showToast('输出图读取失败，无法进入编辑器', 'error')
     return

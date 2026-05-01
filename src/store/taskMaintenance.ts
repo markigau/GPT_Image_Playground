@@ -6,11 +6,7 @@ import {
   RECYCLE_BIN_POLL_INTERVAL_MS,
   RECYCLE_BIN_RETENTION_MS,
 } from './constants'
-import {
-  deleteImageAsset,
-  listImageAssetRecords,
-  startLegacyImageAssetMigrationSweep,
-} from './imageAssets'
+import { removeImage, listImages, startLegacyImageAssetMigrationSweep } from './imageAssets'
 import { applyTaskPurgePlan } from './taskPurgeApply'
 import { planOrphanImageCleanup, planTaskPurge } from './taskPurgePlanner'
 import { useStore } from './state'
@@ -80,7 +76,7 @@ function ensureErrorLogJanitorStarted() {
 
 async function cleanupOrphanImages(tasks: TaskRecord[]) {
   const { inputImages } = useStore.getState()
-  const images = await listImageAssetRecords()
+  const images = await listImages()
   const cleanupPlan = planOrphanImageCleanup({
     allTasks: tasks,
     allImageIds: images.map((image) => image.id),
@@ -88,7 +84,7 @@ async function cleanupOrphanImages(tasks: TaskRecord[]) {
   })
 
   for (const imageId of cleanupPlan.imageIdsToDelete) {
-    await deleteImageAsset(imageId)
+    await removeImage(imageId)
   }
 }
 

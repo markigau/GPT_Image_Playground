@@ -1,5 +1,5 @@
 import { parseRatio } from '../../../../lib/size'
-import { getCachedImageAssetMetadata, resolveTaskAppliedImageParam } from '../../../../store'
+import { getImageView, resolveTaskAppliedImageParam } from '../../../../store'
 import type { TaskRecord } from '../../../../types'
 
 export interface TaskMosaicDimensions {
@@ -19,7 +19,7 @@ export function resolveTaskCoverImageId(task: TaskRecord): string {
 
 export function resolveTaskMosaicDimensions(task: TaskRecord): TaskMosaicDimensions {
   const coverImageId = resolveTaskCoverImageId(task)
-  const cachedMetadata = coverImageId ? getCachedImageAssetMetadata(coverImageId) : undefined
+  const cachedMetadata = coverImageId ? getImageView(coverImageId).metadata : undefined
   if (cachedMetadata?.width && cachedMetadata?.height) {
     return {
       width: cachedMetadata.width,

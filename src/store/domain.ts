@@ -22,9 +22,13 @@ import { DEFAULT_PROVIDER_NAME, genId } from './constants'
 export { isRecord } from '../lib/guards'
 export { isRemoteImageUrl } from '../lib/imageUrl'
 
+// ===== Provider =====
+
 function genProviderId(): string {
   return `provider-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
+
+// ===== Category =====
 
 function genCategoryId(): string {
   return `category-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
@@ -159,6 +163,8 @@ export function mergeCategoriesFromTasks(
     : normalizedCategories
 }
 
+// ===== Prompt Library =====
+
 function normalizePromptLibraryContent(content: unknown): string {
   return typeof content === 'string' ? content.replace(/\r\n/g, '\n').trim() : ''
 }
@@ -286,6 +292,8 @@ export function mergePromptLibraryItems(
   }
 }
 
+// ===== Image Utilities =====
+
 export function getTaskReferencedImageIds(task: TaskRecord): string[] {
   return [
     ...(task.inputImageIds || []),
@@ -293,6 +301,8 @@ export function getTaskReferencedImageIds(task: TaskRecord): string[] {
     ...(task.editMaskImageId ? [task.editMaskImageId] : []),
   ]
 }
+
+// ===== Import / Export =====
 
 export function getImportedPromptLibraryFromExport(
   data: ExportData,

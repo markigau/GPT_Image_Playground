@@ -9,15 +9,15 @@ import {
   moveTasksToCategory,
   purgeTask,
   purgeTasks,
-  renameCategory,
   removeTask,
   removeTasks,
+  renameCategory,
   restoreTask,
   restoreTasks,
   reuseConfig,
   setTasksFavorite,
   toggleTaskFavorite,
-} from './collectionActions'
+} from './gallery'
 import { abortTask, retryTask } from './runtime'
 import { useStore } from './state'
 
