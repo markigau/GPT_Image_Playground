@@ -444,6 +444,7 @@ export default defineConfig(({ command }) => {
   const devProxyConfig = command === 'serve' ? loadDevProxyConfig() : null
 
   return {
+    base: '/GPT_Image_Playground/',
     plugins: [
       react(),
       {
